@@ -1,5 +1,9 @@
 # dbus-mqtt-battery
 
+[![CI](https://github.com/4alvit/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/4alvit/dbus-mqtt-battery/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Release](https://img.shields.io/github/v/release/4alvit/dbus-mqtt-battery)](https://github.com/4alvit/dbus-mqtt-battery/releases)
+
 MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calculation.
 
 ## System Architecture
