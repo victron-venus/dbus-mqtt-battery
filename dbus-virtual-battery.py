@@ -215,6 +215,7 @@ class VirtualBatteryService:
         self._dbusservice.add_path("/Capacity", self.chain_capacity)
         self._dbusservice.add_path("/InstalledCapacity", self.chain_capacity)
         self._dbusservice.add_path("/ConsumedAmphours", None)
+        self._dbusservice.add_path("/TimeToGo", None, writeable=True)
         
         # System info - shows source availability
         # Battery system configuration for GUI v2
@@ -421,6 +422,23 @@ class VirtualBatteryService:
         self._dbusservice["/Soc"] = round(virtual_soc, 1)
         self._dbusservice["/Capacity"] = round(remaining_capacity, 1)
         self._dbusservice["/ConsumedAmphours"] = round(self.consumed_ah, 1)
+        
+        # Calculate TimeToGo (in seconds)
+        if virtual_current < -0.5 and remaining_capacity > 0:
+            # Discharging: time = remaining capacity / discharge current
+            hours = remaining_capacity / abs(virtual_current)
+            # Cap at 7 days max
+            time_to_go = min(int(hours * 3600), 7 * 24 * 3600)
+            self._dbusservice["/TimeToGo"] = time_to_go
+        elif virtual_current > 0.5 and self.chain_capacity > remaining_capacity:
+            # Charging: time = (full - remaining) / charge current
+            hours = (self.chain_capacity - remaining_capacity) / virtual_current
+            # Cap at 7 days max
+            time_to_go = min(int(hours * 3600), 7 * 24 * 3600)
+            self._dbusservice["/TimeToGo"] = time_to_go
+        else:
+            # Idle or very low current - no meaningful time-to-go
+            self._dbusservice["/TimeToGo"] = None
         
         if cell_voltage:
             self._dbusservice["/System/MinCellVoltage"] = round(cell_voltage, 3)
