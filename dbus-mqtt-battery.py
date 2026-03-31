@@ -29,6 +29,8 @@ import os
 import argparse
 import logging
 import re
+import signal
+import gc
 from typing import Dict, Any, Optional, List
 from time import sleep, time
 from threading import Lock
@@ -70,7 +72,7 @@ logger = logging.getLogger("MqttBattery")
 # CONFIGURATION
 # =============================================================================
 
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 DEFAULT_MQTT_BROKER = "localhost"
 DEFAULT_MQTT_PORT = 1883
 POLL_INTERVAL_MS = 2000
@@ -536,6 +538,7 @@ class MqttBatteryClient:
         self.batteries: Dict[int, BatteryData] = {
             i: BatteryData(i) for i in range(1, battery_count + 1)
         }
+        self._data_lock = Lock()  # Protect aggregate data access
         
         # Aggregate totals from ESP32
         self.total_voltage: float = 0.0
@@ -555,14 +558,19 @@ class MqttBatteryClient:
         else:
             self.client = mqtt.Client(client_id=client_id)
         self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
         self.client.on_message = self._on_message
         self.connected = False
+        self._reconnect_delay = 1  # Exponential backoff starting point
+        self._max_reconnect_delay = 60
 
     def connect(self):
-        """Connect to MQTT broker"""
+        """Connect to MQTT broker with auto-reconnect enabled"""
         try:
             logger.info(f"Connecting to MQTT broker {self.broker}:{self.port}")
-            self.client.connect(self.broker, self.port, 60)
+            # Enable auto-reconnect with exponential backoff
+            self.client.reconnect_delay_set(min_delay=1, max_delay=self._max_reconnect_delay)
+            self.client.connect(self.broker, self.port, keepalive=60)
             self.client.loop_start()
             return True
         except Exception as e:
@@ -579,12 +587,21 @@ class MqttBatteryClient:
         if rc == 0:
             logger.info("Connected to MQTT broker")
             self.connected = True
+            self._reconnect_delay = 1  # Reset backoff on successful connect
             # Subscribe to all battery topics
             topic = f"{self.topic_prefix}/#"
             client.subscribe(topic)
             logger.info(f"Subscribed to {topic}")
         else:
             logger.error(f"MQTT connection failed with code {rc}")
+    
+    def _on_disconnect(self, client, userdata, rc):
+        """MQTT disconnection callback with auto-reconnect"""
+        self.connected = False
+        if rc != 0:
+            logger.warning(f"MQTT disconnected unexpectedly (rc={rc}), will auto-reconnect")
+        else:
+            logger.info("MQTT disconnected cleanly")
 
     def _on_message(self, client, userdata, msg):
         """MQTT message callback"""
@@ -670,10 +687,35 @@ class MqttBatteryClient:
             pass
 
     def get_aggregate_data(self) -> Dict[str, Any]:
-        """Get aggregated data from all batteries"""
-        valid_batts = [b for b in self.batteries.values() if b.is_valid()]
-        if not valid_batts:
-            return None
+        """Get aggregated data from all batteries (thread-safe)"""
+        # Copy battery data under lock to avoid race conditions with MQTT thread
+        with self._data_lock:
+            valid_batts = [b for b in self.batteries.values() if b.is_valid()]
+            if not valid_batts:
+                return None
+            # Copy volatile data from each battery
+            batt_snapshots = []
+            for b in valid_batts:
+                with b.lock:
+                    batt_snapshots.append({
+                        'battery_id': b.battery_id,
+                        'voltage': b.voltage,
+                        'current': b.current,
+                        'power': b.power,
+                        'soc': b.soc,
+                        'capacity_remaining': b.capacity_remaining,
+                        'temperature': b.temperature,
+                        'temperatures': dict(b.temperatures),
+                        'cells': dict(b.cells),
+                        'cell_count': b.cell_count,
+                        'charging': b.charging,
+                        'discharging': b.discharging,
+                        'cycles': b.cycles,
+                        'online': b.online,
+                    })
+        
+        # Process snapshots outside of locks
+        valid_batts = batt_snapshots
         
         # Collect all cells with global IDs: (global_cell_id, voltage)
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
@@ -682,13 +724,13 @@ class MqttBatteryClient:
         cells_per_bms = 4  # Typical for JBD
         
         for batt in valid_batts:
-            for cell_idx, voltage in batt.cells.items():
+            for cell_idx, voltage in batt['cells'].items():
                 if voltage and voltage > 0:
-                    global_id = (batt.battery_id - 1) * cells_per_bms + cell_idx
+                    global_id = (batt['battery_id'] - 1) * cells_per_bms + cell_idx
                     all_cells_with_id.append((global_id, voltage))
-            for temp_idx, temp in batt.temperatures.items():
+            for temp_idx, temp in batt['temperatures'].items():
                 if temp > -40:
-                    global_id = (batt.battery_id - 1) * 2 + temp_idx
+                    global_id = (batt['battery_id'] - 1) * 2 + temp_idx
                     all_temps_with_id.append((global_id, temp))
         
         # Find min/max cells
@@ -709,7 +751,7 @@ class MqttBatteryClient:
             min_temp, min_temp_id = min_t[1], min_t[0]
             max_temp, max_temp_id = max_t[1], max_t[0]
         else:
-            min_temp = sum(b.temperature for b in valid_batts) / len(valid_batts)
+            min_temp = sum(b['temperature'] for b in valid_batts) / len(valid_batts)
             max_temp = min_temp
             min_temp_id = 1
             max_temp_id = 1
@@ -720,7 +762,7 @@ class MqttBatteryClient:
         total_capacity_full = self.installed_capacity
         
         # Remaining capacity = installed × average SoC / 100
-        avg_soc = sum(b.soc for b in valid_batts) / len(valid_batts)
+        avg_soc = sum(b['soc'] for b in valid_batts) / len(valid_batts)
         total_capacity_remaining = total_capacity_full * avg_soc / 100
         
         # Use ESP32 totals if available, otherwise calculate
@@ -731,10 +773,10 @@ class MqttBatteryClient:
             soc = self.total_soc
             capacity = self.total_capacity
         else:
-            voltage = sum(b.voltage for b in valid_batts)
-            current = sum(b.current for b in valid_batts) / len(valid_batts)
-            power = sum(b.power for b in valid_batts)
-            soc = min(b.soc for b in valid_batts)
+            voltage = sum(b['voltage'] for b in valid_batts)
+            current = sum(b['current'] for b in valid_batts) / len(valid_batts)
+            power = sum(b['power'] for b in valid_batts)
+            soc = min(b['soc'] for b in valid_batts)
             capacity = total_capacity_remaining
         
         return {
@@ -752,17 +794,17 @@ class MqttBatteryClient:
             'min_temp_id': min_temp_id,
             'max_temp': max_temp,
             'max_temp_id': max_temp_id,
-            'temperature': sum(b.temperature for b in valid_batts) / len(valid_batts),
-            'cell_count': sum(batt.cell_count for batt in valid_batts),
-            'allow_charge': all(b.charging for b in valid_batts),
-            'allow_discharge': all(b.discharging for b in valid_batts),
-            'cycles': max(b.cycles for b in valid_batts),
-            'modules_online': sum(1 for b in valid_batts if b.online),
-            'modules_offline': sum(1 for b in valid_batts if not b.online),
-            'modules_blocking_discharge': sum(1 for b in valid_batts if not b.discharging),
-            'modules_blocking_charge': sum(1 for b in valid_batts if not b.charging),
+            'temperature': sum(b['temperature'] for b in valid_batts) / len(valid_batts),
+            'cell_count': sum(b['cell_count'] for b in valid_batts),
+            'allow_charge': all(b['charging'] for b in valid_batts),
+            'allow_discharge': all(b['discharging'] for b in valid_batts),
+            'cycles': max(b['cycles'] for b in valid_batts),
+            'modules_online': sum(1 for b in valid_batts if b['online']),
+            'modules_offline': sum(1 for b in valid_batts if not b['online']),
+            'modules_blocking_discharge': sum(1 for b in valid_batts if not b['discharging']),
+            'modules_blocking_charge': sum(1 for b in valid_batts if not b['charging']),
             'all_cells': all_cells_with_id,  # List of (global_id, voltage) tuples
-            'temperatures': {b.battery_id: b.temperature for b in valid_batts},  # BMS ID -> temp
+            'temperatures': {b['battery_id']: b['temperature'] for b in valid_batts},  # BMS ID -> temp
         }
 
 
@@ -1254,6 +1296,19 @@ def main():
     # Setup D-Bus main loop
     DBusGMainLoop(set_as_default=True)
     mainloop = gobject.MainLoop()
+    
+    # Variables for cleanup
+    mqtt_client = None
+    
+    def graceful_shutdown(signum, frame):
+        """Handle shutdown signals gracefully"""
+        sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        logger.info(f"Received {sig_name}, shutting down gracefully...")
+        mainloop.quit()
+    
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
 
     # Create MQTT client
     mqtt_client = MqttBatteryClient(args.broker, args.port, args.batteries, args.topic_prefix, args.capacity)
@@ -1267,13 +1322,25 @@ def main():
 
     # Create D-Bus service
     dbus_service = DbusAggregateService(mqtt_client, args.instance, args.service_suffix, args.product_name)
+    
+    # Periodic garbage collection counter
+    gc_counter = 0
+    GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
 
     def poll():
-        """Periodic update"""
+        """Periodic update with memory management"""
+        nonlocal gc_counter
         try:
             dbus_service.update()
         except Exception as e:
             logger.error(f"Error in poll: {e}")
+        
+        # Periodic garbage collection for memory-constrained Venus OS
+        gc_counter += 1
+        if gc_counter >= GC_INTERVAL:
+            gc_counter = 0
+            gc.collect()
+        
         return True
 
     # Start polling
@@ -1284,9 +1351,15 @@ def main():
     try:
         mainloop.run()
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        logger.info("KeyboardInterrupt received")
+    except Exception as e:
+        logger.error(f"Unexpected error in main loop: {e}")
     finally:
-        mqtt_client.disconnect()
+        logger.info("Cleaning up...")
+        if mqtt_client:
+            mqtt_client.disconnect()
+        gc.collect()
+        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,8 @@ import sys
 import os
 import argparse
 import logging
+import signal
+import gc
 from time import sleep, time
 from typing import Optional, List, Dict, Tuple
 
@@ -48,7 +50,7 @@ else:
 from vedbus import VeDbusService
 
 # Version
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # Logging setup
 logging.basicConfig(
@@ -89,16 +91,45 @@ class SourceStatus:
 
 
 class DbusReader:
-    """Read values from D-Bus services"""
+    """Read values from D-Bus services with automatic reconnection"""
     
     def __init__(self):
-        self.bus = get_bus()
+        self.bus = None
         self._cache = {}
         self._cache_time = {}
         self._cache_ttl = 1.0  # Cache values for 1 second
+        self._last_reconnect_attempt = 0
+        self._reconnect_interval = 5.0  # Minimum seconds between reconnect attempts
+        self._connect()
+    
+    def _connect(self):
+        """Connect to D-Bus"""
+        try:
+            self.bus = get_bus()
+            logger.debug("D-Bus connection established")
+            return True
+        except Exception as e:
+            logger.error(f"D-Bus connection failed: {e}")
+            self.bus = None
+            return False
+    
+    def _ensure_connected(self) -> bool:
+        """Ensure D-Bus connection is active, reconnect if needed"""
+        if self.bus is not None:
+            return True
+        
+        now = time()
+        if (now - self._last_reconnect_attempt) < self._reconnect_interval:
+            return False
+        
+        self._last_reconnect_attempt = now
+        return self._connect()
     
     def get_value(self, service: str, path: str) -> Optional[float]:
         """Get a value from D-Bus service"""
+        if not self._ensure_connected():
+            return None
+        
         cache_key = f"{service}{path}"
         now = time()
         
@@ -127,8 +158,14 @@ class DbusReader:
             return value
             
         except dbus.exceptions.DBusException as e:
-            if "UnknownObject" not in str(e) and "NameHasNoOwner" not in str(e):
-                logger.debug(f"D-Bus error reading {service}{path}: {e}")
+            error_str = str(e)
+            if "UnknownObject" not in error_str and "NameHasNoOwner" not in error_str:
+                # Connection might be broken
+                if "Connection refused" in error_str or "org.freedesktop.DBus.Error.Disconnected" in error_str:
+                    logger.warning(f"D-Bus connection lost, will reconnect")
+                    self.bus = None
+                else:
+                    logger.debug(f"D-Bus error reading {service}{path}: {e}")
             return None
         except Exception as e:
             logger.debug(f"Error reading {service}{path}: {e}")
@@ -136,6 +173,8 @@ class DbusReader:
     
     def service_exists(self, service: str) -> bool:
         """Check if a D-Bus service exists"""
+        if not self._ensure_connected():
+            return False
         try:
             self.bus.get_object(service, "/")
             return True
@@ -484,6 +523,16 @@ def main():
     DBusGMainLoop(set_as_default=True)
     mainloop = gobject.MainLoop()
     
+    def graceful_shutdown(signum, frame):
+        """Handle shutdown signals gracefully"""
+        sig_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        logger.info(f"Received {sig_name}, shutting down gracefully...")
+        mainloop.quit()
+    
+    # Register signal handlers
+    signal.signal(signal.SIGTERM, graceful_shutdown)
+    signal.signal(signal.SIGINT, graceful_shutdown)
+    
     # Wait for services to be available
     logger.info("Waiting for D-Bus services...")
     sleep(5)
@@ -497,12 +546,24 @@ def main():
         chain_capacity=args.capacity
     )
     
+    # Periodic garbage collection counter
+    gc_counter = 0
+    GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
+    
     def poll():
-        """Periodic update"""
+        """Periodic update with memory management"""
+        nonlocal gc_counter
         try:
             service.update()
         except Exception as e:
             logger.error(f"Error in poll: {e}")
+        
+        # Periodic garbage collection for memory-constrained Venus OS
+        gc_counter += 1
+        if gc_counter >= GC_INTERVAL:
+            gc_counter = 0
+            gc.collect()
+        
         return True
     
     # Start polling
@@ -513,7 +574,12 @@ def main():
     try:
         mainloop.run()
     except KeyboardInterrupt:
-        logger.info("Shutting down...")
+        logger.info("KeyboardInterrupt received")
+    except Exception as e:
+        logger.error(f"Unexpected error in main loop: {e}")
+    finally:
+        gc.collect()
+        logger.info("Shutdown complete")
 
 
 if __name__ == "__main__":
