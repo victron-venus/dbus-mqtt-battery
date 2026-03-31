@@ -6,6 +6,8 @@
 
 MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calculation.
 
+> **Note**: This project requires [esphome-jbd-bms-mqtt](https://github.com/4alvit/esphome-jbd-bms-bluetooth-victron-cerbo-gx-mqtt) running on ESP32 to read BMS data via Bluetooth and publish to MQTT.
+
 ## System Architecture
 
 ```
