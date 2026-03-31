@@ -74,7 +74,7 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
 ```bash
 cd ~/victron/dbus-mqtt-battery
 chmod +x deploy-all.sh
-./deploy-all.sh 192.168.160.150
+./deploy-all.sh <MQTT_BROKER_IP>
 ```
 
 This deploys:
@@ -100,7 +100,7 @@ cat > /service/dbus-mqtt-chain1/run << "EOF"
 exec 2>&1
 cd /data/apps/dbus-mqtt-battery
 exec python3 dbus-mqtt-battery.py \
-    --broker 192.168.160.150 \
+    --broker <MQTT_BROKER_IP> \
     --batteries 4 \
     --instance 512 \
     --topic-prefix battery \
@@ -129,7 +129,7 @@ cat > /service/dbus-mqtt-chain2/run << "EOF"
 exec 2>&1
 cd /data/apps/dbus-mqtt-battery
 exec python3 dbus-mqtt-battery.py \
-    --broker 192.168.160.150 \
+    --broker <MQTT_BROKER_IP> \
     --batteries 4 \
     --instance 513 \
     --topic-prefix battery2 \
@@ -208,7 +208,7 @@ battery2/sensor/voltage_total/state
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--broker` | `192.168.160.150` | MQTT broker address |
+| `--broker` | `<MQTT_BROKER_IP>` | MQTT broker address |
 | `--port` | `1883` | MQTT broker port |
 | `--batteries` | `4` | Number of batteries in chain |
 | `--instance` | `512` | D-Bus device instance |
@@ -315,5 +315,5 @@ Run manually to see errors:
 ```bash
 svc -d /service/dbus-mqtt-chain1
 cd /data/apps/dbus-mqtt-battery
-python3 dbus-mqtt-battery.py --broker 192.168.160.150 --topic-prefix battery --service-suffix mqtt_chain1
+python3 dbus-mqtt-battery.py --broker <MQTT_BROKER_IP> --topic-prefix battery --service-suffix mqtt_chain1
 ```
