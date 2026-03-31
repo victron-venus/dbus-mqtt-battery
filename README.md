@@ -1,12 +1,12 @@
 # dbus-mqtt-battery
 
-[![CI](https://github.com/4alvit/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/4alvit/dbus-mqtt-battery/actions/workflows/ci.yml)
+[![CI](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Release](https://img.shields.io/github/v/release/4alvit/dbus-mqtt-battery)](https://github.com/4alvit/dbus-mqtt-battery/releases)
+[![Release](https://img.shields.io/github/v/release/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/releases)
 
 MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calculation.
 
-> **Note**: This project requires [esphome-jbd-bms-mqtt](https://github.com/4alvit/esphome-jbd-bms-bluetooth-victron-cerbo-gx-mqtt) running on ESP32 to read BMS data via Bluetooth and publish to MQTT.
+> **Note**: This project requires [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) running on ESP32 to read BMS data via Bluetooth and publish to MQTT.
 
 ## System Architecture
 
