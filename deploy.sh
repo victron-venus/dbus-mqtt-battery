@@ -4,18 +4,18 @@
 # Then run install.sh on Venus OS
 #
 # Prerequisites:
-#   - SSH config with host 'r' pointing to Venus OS device
+#   - SSH config with host 'Cerbo' pointing to Venus OS device
 #   - SSH key authentication configured
 #
 # Usage: ./deploy.sh [MQTT_BROKER]
 #
 # This is a simplified version. For full 3-chain deployment, use deploy-all.sh
 #
-# Use case: ./deploy.sh && ssh r 'svc -t /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 && sleep 3 && tail -15 /var/log/dbus-mqtt-chain1/stderr.log'
+# Use case: ./deploy.sh && ssh Cerbo 'svc -t /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 && sleep 3 && tail -15 /var/log/dbus-mqtt-chain1/stderr.log'
 
 set -e
 
-SSH_HOST="${SSH_HOST:-r}"
+SSH_HOST="${SSH_HOST:-Cerbo}"
 MQTT_BROKER="${1:-192.168.160.150}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
