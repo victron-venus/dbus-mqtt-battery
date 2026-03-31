@@ -8,40 +8,40 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
                                      ┌─────────────────────────────────────┐
                                      │         Venus OS (Cerbo GX)         │
                                      │                                     │
- [Chain 1: 4x JBD BMS]               │  ┌─────────────────────────────┐   │
-        │                            │  │    dbus-mqtt-battery.py     │   │
-        │ BLE                        │  │    (--topic-prefix battery) │   │
-        ▼                            │  │    → mqtt_chain1            │   │
- [ESP32 #1] ───MQTT───────────────────▶ └─────────────────────────────┘   │
+ [Chain 1: 4x JBD BMS]               │  ┌─────────────────────────────┐    │
+        │                            │  │    dbus-mqtt-battery.py     │    │
+        │ BLE                        │  │    (--topic-prefix battery) │    │
+        ▼                            │  │    → mqtt_chain1            │    │
+ [ESP32 #1] ───MQTT───────────────────▶ └─────────────────────────────┘    │
  topic: battery                      │                │                    │
                                      │                ▼                    │
- [Chain 2: 4x JBD BMS]               │  ┌─────────────────────────────┐   │
-        │                            │  │    dbus-mqtt-battery.py     │   │
-        │ BLE                        │  │    (--topic-prefix battery2)│   │
-        ▼                            │  │    → mqtt_chain2            │   │
- [ESP32 #2] ───MQTT───────────────────▶ └─────────────────────────────┘   │
+ [Chain 2: 4x JBD BMS]               │  ┌─────────────────────────────┐    │
+        │                            │  │    dbus-mqtt-battery.py     │    │
+        │ BLE                        │  │    (--topic-prefix battery2)│    │
+        ▼                            │  │    → mqtt_chain2            │    │
+ [ESP32 #2] ───MQTT───────────────────▶ └─────────────────────────────┘    │
  topic: battery2                     │                │                    │
                                      │                ▼                    │
- [Chain 3: 4x Batteries NO BMS]      │  ┌─────────────────────────────┐   │
-        │                            │  │   dbus-virtual-battery.py   │   │
-        │ Shunt                      │  │   SmartShunt - Chain1 - 2   │   │
-        ▼                            │  │    → virtual_chain          │   │
- [SmartShunt] ──────VE.Direct─────────▶ └─────────────────────────────┘   │
+ [Chain 3: 4x Batteries NO BMS]      │  ┌─────────────────────────────┐    │
+        │                            │  │   dbus-virtual-battery.py   │    │
+        │ Shunt                      │  │   SmartShunt - Chain1 - 2   │    │
+        ▼                            │  │    → virtual_chain          │    │
+ [SmartShunt] ──────VE.Direct─────────▶ └─────────────────────────────┘    │
                                      │                │                    │
                                      │                ▼                    │
-                                     │        ┌─────────────┐             │
-                                     │        │   D-Bus     │             │
-                                     │        │             │             │
-                                     │        │ mqtt_chain1 │             │
-                                     │        │ mqtt_chain2 │             │
-                                     │        │virtual_chain│             │
-                                     │        └──────┬──────┘             │
-                                     │               │                    │
-                                     │               ▼                    │
-                                     │        ┌─────────────┐             │
-                                     │        │  Victron    │             │
-                                     │        │  GUI v2     │             │
-                                     │        └─────────────┘             │
+                                     │        ┌─────────────┐              │
+                                     │        │   D-Bus     │              │
+                                     │        │             │              │
+                                     │        │ mqtt_chain1 │              │
+                                     │        │ mqtt_chain2 │              │
+                                     │        │virtual_chain│              │
+                                     │        └──────┬──────┘              │
+                                     │               │                     │
+                                     │               ▼                     │
+                                     │        ┌─────────────┐              │
+                                     │        │  Victron    │              │
+                                     │        │  GUI v2     │              │
+                                     │        └─────────────┘              │
                                      └─────────────────────────────────────┘
 ```
 
@@ -62,8 +62,6 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
 | `deploy-all.sh` | Deploy all 3 services at once |
 | `deploy.sh` | Deploy single chain |
 | `install.sh` | Install script (run on Venus OS) |
-| `esphome/jbd-all-batteries1.yaml` | ESPHome config for ESP32 #1 (Chain 1) |
-| `esphome/jbd-all-batteries2.yaml` | ESPHome config for ESP32 #2 (Chain 2) |
 
 ## Quick Deploy (All 3 Chains)
 
