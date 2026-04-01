@@ -92,9 +92,9 @@ cd esphome
 esphome run jbd-all-batteries1.yaml
 
 # Deploy service
-ssh r 'mkdir -p /data/apps/dbus-mqtt-battery /service/dbus-mqtt-chain1/log /var/log/dbus-mqtt-chain1'
-scp dbus-mqtt-battery.py r:/data/apps/dbus-mqtt-battery/
-ssh r 'chmod +x /data/apps/dbus-mqtt-battery/dbus-mqtt-battery.py && \
+ssh Cerbo 'mkdir -p /data/apps/dbus-mqtt-battery /service/dbus-mqtt-chain1/log /var/log/dbus-mqtt-chain1'
+scp dbus-mqtt-battery.py Cerbo:/data/apps/dbus-mqtt-battery/
+ssh Cerbo 'chmod +x /data/apps/dbus-mqtt-battery/dbus-mqtt-battery.py && \
 cat > /service/dbus-mqtt-chain1/run << "EOF"
 #!/bin/sh
 exec 2>&1
@@ -123,7 +123,7 @@ cd esphome
 esphome run jbd-all-batteries2.yaml
 
 # Deploy service  
-ssh r 'mkdir -p /service/dbus-mqtt-chain2/log /var/log/dbus-mqtt-chain2 && \
+ssh Cerbo 'mkdir -p /service/dbus-mqtt-chain2/log /var/log/dbus-mqtt-chain2 && \
 cat > /service/dbus-mqtt-chain2/run << "EOF"
 #!/bin/sh
 exec 2>&1
@@ -148,8 +148,8 @@ chmod +x /service/dbus-mqtt-chain2/log/run'
 
 ```bash
 # Deploy virtual battery service
-scp dbus-virtual-battery.py r:/data/apps/dbus-mqtt-battery/
-ssh r 'chmod +x /data/apps/dbus-mqtt-battery/dbus-virtual-battery.py && \
+scp dbus-virtual-battery.py Cerbo:/data/apps/dbus-mqtt-battery/
+ssh Cerbo 'chmod +x /data/apps/dbus-mqtt-battery/dbus-virtual-battery.py && \
 mkdir -p /service/dbus-virtual-chain/log /var/log/dbus-virtual-chain && \
 cat > /service/dbus-virtual-chain/run << "EOF"
 #!/bin/sh
@@ -250,7 +250,7 @@ tail -f /var/log/dbus-virtual-chain/current
 ## Verify D-Bus Values
 
 ```bash
-ssh r 'echo "=== Chain 1 ===" && \
+ssh Cerbo 'echo "=== Chain 1 ===" && \
 dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue && \
 dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Current GetValue && \
 dbus -y com.victronenergy.battery.mqtt_chain1 /Soc GetValue && \
@@ -270,7 +270,7 @@ dbus -y com.victronenergy.battery.ttyUSB4 /Dc/0/Current GetValue'
 ## Uninstall
 
 ```bash
-ssh r 'svc -d /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
+ssh Cerbo 'svc -d /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
 rm -rf /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
 rm -rf /data/apps/dbus-mqtt-battery
 rm -rf /var/log/dbus-mqtt-chain1 /var/log/dbus-mqtt-chain2 /var/log/dbus-virtual-chain'
