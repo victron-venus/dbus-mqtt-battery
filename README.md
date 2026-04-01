@@ -6,7 +6,13 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
 [![GitHub stars](https://img.shields.io/github/stars/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/network/members)
+[![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/issues)
 [![GitHub last commit](https://img.shields.io/github/last-commit/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/commits/main)
+[![Code size](https://img.shields.io/github/languages/code-size/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery)
+[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/victron-venus/dbus-mqtt-battery/graphs/commit-activity)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/victron-venus/dbus-mqtt-battery/pulls)
+[![Victron Community](https://img.shields.io/badge/Victron-Community-blue)](https://community.victronenergy.com/)
 
 MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calculation.
 
