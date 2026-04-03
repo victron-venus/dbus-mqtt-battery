@@ -17,7 +17,7 @@
 
 set -e
 
-SSH_HOST="${SSH_HOST:-r}"
+SSH_HOST="${SSH_HOST:-Cerbo}"
 MQTT_BROKER="${1:-192.168.160.150}"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
