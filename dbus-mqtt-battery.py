@@ -72,7 +72,7 @@ logger = logging.getLogger("MqttBattery")
 # CONFIGURATION
 # =============================================================================
 
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 DEFAULT_MQTT_BROKER = "localhost"
 DEFAULT_MQTT_PORT = 1883
 POLL_INTERVAL_MS = 2000
@@ -527,12 +527,14 @@ class MqttBatteryClient:
     """MQTT client that receives battery data from ESP32"""
     
     def __init__(self, broker: str, port: int, battery_count: int = 4, topic_prefix: str = "battery", 
-                 installed_capacity: float = 280):
+                 installed_capacity: float = 280, bms_first: int = 1):
         self.broker = broker
         self.port = port
         self.battery_count = battery_count
         self.topic_prefix = topic_prefix
         self.installed_capacity = installed_capacity  # Fixed capacity for series-connected batteries
+        # MQTT topic index of first BMS for this chain (chain1: 1, chain2 with 2 BMS: 3 for bms3,bms4)
+        self.bms_first = max(1, bms_first)
         
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
         self.batteries: Dict[int, BatteryData] = {
@@ -547,6 +549,9 @@ class MqttBatteryClient:
         self.total_soc: float = 0.0
         self.total_capacity: float = 0.0
         self.total_updated: float = 0.0
+        # If ESP publishes voltage_total but never current_total, do not use total_current=0
+        self.current_total_seen: bool = False
+        self.soc_total_seen: bool = False
         
         # MQTT client (handle both paho-mqtt v1 and v2)
         client_id = f"dbus-mqtt-battery-{int(time())}"
@@ -629,8 +634,10 @@ class MqttBatteryClient:
             if not match:
                 return
             
-            bms_idx = int(match.group(1))
-            if bms_idx not in self.batteries:
+            bms_idx_mqtt = int(match.group(1))
+            # Map MQTT bms index to internal slot (chain2: bms3,bms4 -> internal 1,2)
+            bms_idx = bms_idx_mqtt - self.bms_first + 1
+            if bms_idx < 1 or bms_idx > self.battery_count:
                 return
             
             # Extract sensor type (e.g., "voltage_bms1" -> "voltage")
@@ -676,10 +683,12 @@ class MqttBatteryClient:
                 self.total_voltage = val
             elif sensor_name == 'current_total':
                 self.total_current = val
+                self.current_total_seen = True
             elif sensor_name == 'power_total':
                 self.total_power = val
             elif sensor_name == 'soc_total':
                 self.total_soc = val
+                self.soc_total_seen = True
             elif sensor_name == 'capacity_total':
                 self.total_capacity = val
             self.total_updated = time()
@@ -726,7 +735,9 @@ class MqttBatteryClient:
         for batt in valid_batts:
             for cell_idx, voltage in batt['cells'].items():
                 if voltage and voltage > 0:
-                    global_id = (batt['battery_id'] - 1) * cells_per_bms + cell_idx
+                    # Offset global IDs when this chain starts at bms N > 1
+                    chain_cell_base = (self.bms_first - 1) * cells_per_bms
+                    global_id = chain_cell_base + (batt['battery_id'] - 1) * cells_per_bms + cell_idx
                     all_cells_with_id.append((global_id, voltage))
             for temp_idx, temp in batt['temperatures'].items():
                 if temp > -40:
@@ -766,12 +777,24 @@ class MqttBatteryClient:
         total_capacity_remaining = total_capacity_full * avg_soc / 100
         
         # Use ESP32 totals if available, otherwise calculate
+        # Important: many ESPHome configs publish voltage_total but NOT current_total.
+        # In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
         if (time() - self.total_updated) < STALE_TIMEOUT and self.total_voltage > 0:
             voltage = self.total_voltage
-            current = self.total_current
-            power = self.total_power if self.total_power != 0 else self.total_voltage * self.total_current
-            soc = self.total_soc
-            capacity = self.total_capacity
+            if self.current_total_seen:
+                current = self.total_current
+                power = self.total_power if self.total_power != 0 else self.total_voltage * self.total_current
+            else:
+                current = sum(b['current'] for b in valid_batts) / len(valid_batts)
+                power = sum(b['power'] for b in valid_batts)
+                if abs(power) < 1.0:
+                    power = voltage * current
+            if self.soc_total_seen and self.total_soc > 0:
+                soc = self.total_soc
+                capacity = self.total_capacity if self.total_capacity > 0 else total_capacity_remaining
+            else:
+                soc = min(b['soc'] for b in valid_batts)
+                capacity = total_capacity_remaining
         else:
             voltage = sum(b['voltage'] for b in valid_batts)
             current = sum(b['current'] for b in valid_batts) / len(valid_batts)
@@ -1286,12 +1309,14 @@ def main():
     parser.add_argument('--service-suffix', default='mqtt_chain', help='D-Bus service suffix (default: mqtt_chain)')
     parser.add_argument('--product-name', default='JBD Battery Chain', help='Product name in GUI')
     parser.add_argument('--capacity', type=float, default=280, help='Installed capacity in Ah (for series-connected batteries)')
+    parser.add_argument('--bms-first', type=int, default=1,
+                        help='First MQTT BMS index for this chain (chain1: 1, chain2 with bms3+bms4: 3)')
     args = parser.parse_args()
 
     logger.info(f"=== dbus-mqtt-battery v{VERSION} ===")
     logger.info(f"MQTT Broker: {args.broker}:{args.port}")
     logger.info(f"Topic prefix: {args.topic_prefix}")
-    logger.info(f"Number of batteries: {args.batteries}")
+    logger.info(f"Number of batteries: {args.batteries}, MQTT BMS index starts at: {args.bms_first}")
     logger.info(f"D-Bus service: com.victronenergy.battery.{args.service_suffix}")
 
     # Setup D-Bus main loop
@@ -1312,7 +1337,9 @@ def main():
     signal.signal(signal.SIGINT, graceful_shutdown)
 
     # Create MQTT client
-    mqtt_client = MqttBatteryClient(args.broker, args.port, args.batteries, args.topic_prefix, args.capacity)
+    mqtt_client = MqttBatteryClient(
+        args.broker, args.port, args.batteries, args.topic_prefix, args.capacity, args.bms_first
+    )
     if not mqtt_client.connect():
         logger.error("Failed to connect to MQTT broker")
         sys.exit(1)

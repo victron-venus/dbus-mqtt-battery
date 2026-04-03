@@ -228,11 +228,20 @@ battery2/sensor/voltage_total/state
 |----------|---------|-------------|
 | `--broker` | `<MQTT_BROKER_IP>` | MQTT broker address |
 | `--port` | `1883` | MQTT broker port |
-| `--batteries` | `4` | Number of batteries in chain |
+| `--batteries` | `4` | Number of batteries in this chain |
+| `--bms-first` | `1` | First MQTT BMS index for this chain (see multi-chain below) |
 | `--instance` | `512` | D-Bus device instance |
 | `--topic-prefix` | `battery` | MQTT topic prefix |
 | `--service-suffix` | `mqtt_chain` | D-Bus service suffix |
 | `--product-name` | `JBD Battery Chain` | Product name in GUI |
+| `--capacity` | `280` | Installed Ah (series string) |
+
+**Multi-chain from one ESP (topics `battery/sensor/..._bms1` … `_bms4`):** run two services with different `--service-suffix` and BMS ranges, for example:
+
+- Chain 1: `--batteries 2 --bms-first 1 --service-suffix mqtt_chain1` → uses `bms1`, `bms2`
+- Chain 2: `--batteries 2 --bms-first 3 --service-suffix mqtt_chain2` → uses `bms3`, `bms4`
+
+**`voltage_total` without `current_total`:** if the GUI showed **0 A** while per-BMS MQTT had real current, the script was using stale `current_total=0`. v2.6+ uses per-BMS current when `current_total` was never published.
 
 ### dbus-virtual-battery.py
 
