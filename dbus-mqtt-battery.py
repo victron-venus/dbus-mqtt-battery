@@ -1187,6 +1187,7 @@ class DbusAggregateService:
         # Low/High voltage (aggregate)
         voltage = data.get('voltage', 0)
         cell_count = data.get('cell_count', 16)
+        cell_count = 16
         expected_nominal = cell_count * 3.2  # LiFePO4 nominal
         expected_min = cell_count * 2.8
         expected_max = cell_count * 3.65
