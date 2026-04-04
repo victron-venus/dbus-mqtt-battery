@@ -182,6 +182,13 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         createVirtualService
     fi
     
+    # Register with PackageManager (for GUI v1 management)
+    pmDir="/data/packageManager/$packageName"
+    mkdir -p "$pmDir"
+    [ -f "$scriptDir/gitHubInfo" ] && cp "$scriptDir/gitHubInfo" "$pmDir/"
+    ln -sf "$scriptDir" "$pmDir/current"
+    svc -t /service/PackageManager 2>/dev/null || true
+    
     logMessage "Installation complete"
 fi
 
@@ -191,6 +198,8 @@ if [ "$scriptAction" == 'UNINSTALL' ]; then
     
     removeServices
     rm -rf /data/dbus-mqtt-battery
+    rm -rf /data/packageManager/$packageName
+    svc -t /service/PackageManager 2>/dev/null || true
     
     logMessage "Uninstallation complete"
 fi
