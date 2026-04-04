@@ -152,7 +152,35 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 - 2 chains, 4 batteries each, with virtual: `chains=2`, `enableVirtual=true`
 - 5 chains, 8 batteries each: `chains=5`, `batteries=8`
 
-### Option 2: Manual Deploy
+### Option 2: CLI Install (for GUI v2 users)
+
+If you're using GUI v2 (where PackageManager menu is not available), install via SSH:
+
+```bash
+ssh Cerbo
+
+# Download and install
+cd /data && rm -rf dbus-mqtt-battery
+wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/latest.tar.gz | tar -xzf -
+mv dbus-mqtt-battery-latest dbus-mqtt-battery
+chmod +x /data/dbus-mqtt-battery/setup
+
+# Configure (optional, before install)
+mkdir -p /data/setupOptions/dbus-mqtt-battery
+echo "2" > /data/setupOptions/dbus-mqtt-battery/chains        # Number of chains
+echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries     # Batteries per chain
+echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual  # Enable virtual battery
+echo "ttyUSB4" > /data/setupOptions/dbus-mqtt-battery/smartshunt  # SmartShunt port
+
+# Install
+/data/dbus-mqtt-battery/setup install
+
+# Update (re-run same commands)
+# Uninstall
+/data/dbus-mqtt-battery/setup uninstall
+```
+
+### Option 3: Manual Deploy (legacy)
 
 ```bash
 cd ~/victron/dbus-mqtt-battery
