@@ -55,12 +55,9 @@ createChainService() {
         topicPrefix="battery${chainNum}"
     fi
     
-    # BMS first flag for chains > 1 (single ESP32 with multiple BMS)
-    if [ "$chainNum" -gt 1 ]; then
-        bmsFirst="--bms-first"
-    else
-        bmsFirst=""
-    fi
+    # BMS first index for chains > 1 (chain1: BMS 1-4, chain2: BMS 5-8, etc.)
+    local bmsFirstIndex=$(( (chainNum - 1) * batteries + 1 ))
+    bmsFirst="--bms-first $bmsFirstIndex"
     
     logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix)"
     
