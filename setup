@@ -112,7 +112,7 @@ createVirtualService() {
 #!/bin/sh
 exec 2>&1
 cd /data/dbus-mqtt-battery
-exec python3 dbus-virtual-battery.py --smartshunt /dev/$smartshunt --chains$chainList
+exec python3 dbus-virtual-battery.py --smartshunt $smartshunt --chains$chainList
 EOF
     chmod +x "/service/$serviceName/run"
     
