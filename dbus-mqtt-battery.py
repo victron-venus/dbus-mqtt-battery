@@ -732,7 +732,7 @@ class MqttBatteryClient:
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
         all_cells_with_id = []
         all_temps_with_id = []
-        cells_per_bms = self.mqtt.cells_per_bms
+        cells_per_bms = self.cells_per_bms
         
         for batt in valid_batts:
             for cell_idx, voltage in batt['cells'].items():
