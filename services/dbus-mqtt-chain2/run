@@ -1,11 +1,8 @@
 #!/bin/sh
 exec 2>&1
 
-# Read configuration from setupOptions or use defaults
-MQTT_BROKER="localhost"
+MQTT_BROKER="127.0.0.1"
 BATTERIES="4"
-[ -f /data/setupOptions/dbus-mqtt-battery/mqttBroker ] && MQTT_BROKER=$(cat /data/setupOptions/dbus-mqtt-battery/mqttBroker)
-[ -f /data/setupOptions/dbus-mqtt-battery/batteries ] && BATTERIES=$(cat /data/setupOptions/dbus-mqtt-battery/batteries)
 
 cd /data/dbus-mqtt-battery
 exec python3 dbus-mqtt-battery.py \

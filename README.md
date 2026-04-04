@@ -87,7 +87,32 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
 | `deploy.sh` | Deploy single chain |
 | `install.sh` | Install script (run on Venus OS) |
 
-## Quick Deploy (All 3 Chains)
+## Installation
+
+### Option 1: SetupHelper (Recommended)
+
+The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager:
+
+1. **Install SetupHelper** (if not already installed):
+   ```bash
+   wget -qO - https://github.com/kwindrem/SetupHelper/archive/latest.tar.gz | tar -xzf - -C /data
+   mv /data/SetupHelper-latest /data/SetupHelper
+   /data/SetupHelper/setup
+   ```
+
+2. **Add package via GUI**:
+   - Settings → PackageManager → Inactive packages → **new**
+   - Package name: `dbus-mqtt-battery`
+   - GitHub user: `victron-venus`
+   - Branch/tag: `latest`
+   - Proceed → Download → Install
+
+3. **Done!** The package will:
+   - Automatically reinstall after Venus OS updates
+   - Update from GitHub when new versions are available
+   - Provide GUI controls via PackageManager
+
+### Option 2: Manual Deploy (All 3 Chains)
 
 ```bash
 cd ~/victron/dbus-mqtt-battery
