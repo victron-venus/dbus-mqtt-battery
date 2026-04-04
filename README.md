@@ -126,12 +126,14 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    # Batteries per chain (default: 4)
    echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries
    
-   # Enable virtual battery - SmartShunt minus all chains (default: false)
-   echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
-   
    # SmartShunt serial port for virtual battery (default: ttyUSB0)
    echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
+   
+   # Disable virtual battery if you don't have SmartShunt (enabled by default)
+   echo "false" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
    ```
+
+   > **Note**: Virtual battery is **enabled by default**. If you don't have a SmartShunt or don't need virtual battery calculation, disable it **before** installation by setting `enableVirtual` to `false`.
 
 5. **Reinstall** to apply configuration changes:
    - PackageManager → dbus-mqtt-battery → Reinstall
