@@ -42,7 +42,7 @@ echo ">>> Setting up Chain 1 service..."
 mkdir -p /service/dbus-mqtt-chain1/log /var/log/dbus-mqtt-chain1
 cat > /service/dbus-mqtt-chain1/run << EOF
 #!/bin/sh
-exec 2>/var/log/dbus-mqtt-chain1/stderr.log
+exec 2>&1
 cd $INSTALL_DIR
 exec python3 dbus-mqtt-battery.py \\
     --broker $MQTT_BROKER \\
@@ -50,8 +50,7 @@ exec python3 dbus-mqtt-battery.py \\
     --instance 512 \\
     --topic-prefix battery \\
     --service-suffix mqtt_chain1 \\
-    --product-name "JBD Battery Chain 1" \\
-    --capacity 280
+    --product-name "JBD Battery Chain 1"
 EOF
 chmod +x /service/dbus-mqtt-chain1/run
 cat > /service/dbus-mqtt-chain1/log/run << 'EOF'
@@ -69,7 +68,7 @@ echo ">>> Setting up Chain 2 service..."
 mkdir -p /service/dbus-mqtt-chain2/log /var/log/dbus-mqtt-chain2
 cat > /service/dbus-mqtt-chain2/run << EOF
 #!/bin/sh
-exec 2>/var/log/dbus-mqtt-chain2/stderr.log
+exec 2>&1
 cd $INSTALL_DIR
 exec python3 dbus-mqtt-battery.py \\
     --broker $MQTT_BROKER \\
@@ -77,8 +76,7 @@ exec python3 dbus-mqtt-battery.py \\
     --instance 513 \\
     --topic-prefix battery2 \\
     --service-suffix mqtt_chain2 \\
-    --product-name "JBD Battery Chain 2" \\
-    --capacity 280
+    --product-name "JBD Battery Chain 2"
 EOF
 chmod +x /service/dbus-mqtt-chain2/run
 cat > /service/dbus-mqtt-chain2/log/run << 'EOF'
@@ -102,7 +100,7 @@ echo ">>> Setting up Chain 3 (Virtual) service..."
 mkdir -p /service/dbus-virtual-chain/log /var/log/dbus-virtual-chain
 cat > /service/dbus-virtual-chain/run << 'EOF'
 #!/bin/sh
-exec 2>/var/log/dbus-virtual-chain/stderr.log
+exec 2>&1
 cd /data/apps/dbus-mqtt-battery
 # SmartShunt suffix: change 'ttyUSB4' if your device has a different port
 exec python3 dbus-virtual-battery.py \
