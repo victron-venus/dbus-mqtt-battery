@@ -86,7 +86,7 @@ Services are created dynamically based on configuration:
 |------|-------------|
 | `dbus-mqtt-battery.py` | MQTT to D-Bus bridge for ESP32 |
 | `dbus-virtual-battery.py` | Virtual battery calculator (no physical BMS) |
-| `deploy-all.sh` | Deploy all 3 services at once |
+| `deploy.sh` | Deploy via SetupHelper from local machine |
 | `deploy.sh` | Deploy single chain |
 | `install.sh` | Install script (run on Venus OS) |
 
@@ -180,18 +180,15 @@ echo "ttyUSB4" > /data/setupOptions/dbus-mqtt-battery/smartshunt  # SmartShunt p
 /data/dbus-mqtt-battery/setup uninstall
 ```
 
-### Option 3: Manual Deploy (legacy)
+### Option 3: Deploy Script (from local machine)
 
 ```bash
 cd ~/victron/dbus-mqtt-battery
-chmod +x deploy-all.sh
-./deploy-all.sh <MQTT_BROKER_IP>
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-This deploys:
-- **Chain 1**: `dbus-mqtt-chain1` service (ESP32 #1, topic `battery`)
-- **Chain 2**: `dbus-mqtt-chain2` service (ESP32 #2, topic `battery2`)
-- **Chain 3**: `dbus-virtual-chain` service (SmartShunt - Chain1 - Chain2)
+This downloads the latest version from GitHub and runs `setup install`.
 
 ## Individual Chain Deployment
 
