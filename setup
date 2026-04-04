@@ -1,0 +1,70 @@
+#!/bin/bash
+
+# dbus-mqtt-battery SetupHelper compatible setup script
+# MQTT to D-Bus bridge for JBD BMS batteries on Victron Venus OS
+
+#### following line incorporates SetupHelper resources into this script
+source "/data/SetupHelper/HelperResources/IncludeHelpers"
+#### end of lines to include helper resources
+
+packageName="dbus-mqtt-battery"
+
+# Default configuration - can be overridden via setup options
+defaultMqttBroker="localhost"
+defaultBatteries="4"
+
+#### running manually - prompt for input
+if [ "$scriptAction" == 'NONE' ]; then
+    standardActionPrompt
+fi
+
+#### install
+if [ "$scriptAction" == 'INSTALL' ]; then
+    logMessage "Installing $packageName"
+    
+    # Read configuration from setup options or use defaults
+    if [ -f "$setupOptionsDir/mqttBroker" ]; then
+        mqttBroker=$(cat "$setupOptionsDir/mqttBroker")
+    else
+        mqttBroker="$defaultMqttBroker"
+    fi
+    
+    if [ -f "$setupOptionsDir/batteries" ]; then
+        batteries=$(cat "$setupOptionsDir/batteries")
+    else
+        batteries="$defaultBatteries"
+    fi
+    
+    # Create log directories
+    mkdir -p /var/log/dbus-mqtt-chain1
+    mkdir -p /var/log/dbus-mqtt-chain2
+    mkdir -p /var/log/dbus-virtual-chain
+    
+    # Install Python scripts to /data/dbus-mqtt-battery
+    mkdir -p /data/dbus-mqtt-battery
+    cp "$scriptDir/dbus-mqtt-battery.py" /data/dbus-mqtt-battery/
+    cp "$scriptDir/dbus-virtual-battery.py" /data/dbus-mqtt-battery/
+    chmod +x /data/dbus-mqtt-battery/*.py
+    
+    # Copy QML files if overlay-fs is available
+    if [ -d "/data/apps/overlay-fs" ]; then
+        if [ -d "$scriptDir/qml" ]; then
+            bash /data/apps/overlay-fs/add-app-and-directory.sh dbus-mqtt-battery /opt/victronenergy/gui 2>/dev/null || true
+            cp "$scriptDir/qml/"*.qml /opt/victronenergy/gui/qml/ 2>/dev/null && logMessage "Installed QML files"
+            restartGui=true
+        fi
+    fi
+fi
+
+#### uninstall
+if [ "$scriptAction" == 'UNINSTALL' ]; then
+    logMessage "Uninstalling $packageName"
+    
+    # Remove Python scripts
+    rm -rf /data/dbus-mqtt-battery
+    
+    # QML files will be restored by overlay-fs automatically
+fi
+
+# Install/uninstall services and finish
+endScript INSTALL_SERVICE

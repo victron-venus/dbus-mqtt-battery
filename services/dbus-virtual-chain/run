@@ -1,0 +1,14 @@
+#!/bin/sh
+exec 2>&1
+
+# SmartShunt suffix - change if your device has different port
+SMARTSHUNT="ttyUSB4"
+[ -f /data/setupOptions/dbus-mqtt-battery/smartshunt ] && SMARTSHUNT=$(cat /data/setupOptions/dbus-mqtt-battery/smartshunt)
+
+cd /data/dbus-mqtt-battery
+exec python3 dbus-virtual-battery.py \
+    --smartshunt "$SMARTSHUNT" \
+    --chains mqtt_chain1 mqtt_chain2 \
+    --instance 514 \
+    --product-name "JBD Battery Chain 3" \
+    --capacity 280

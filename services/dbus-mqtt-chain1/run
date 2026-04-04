@@ -1,0 +1,17 @@
+#!/bin/sh
+exec 2>&1
+
+# Read configuration from setupOptions or use defaults
+MQTT_BROKER="localhost"
+BATTERIES="4"
+[ -f /data/setupOptions/dbus-mqtt-battery/mqttBroker ] && MQTT_BROKER=$(cat /data/setupOptions/dbus-mqtt-battery/mqttBroker)
+[ -f /data/setupOptions/dbus-mqtt-battery/batteries ] && BATTERIES=$(cat /data/setupOptions/dbus-mqtt-battery/batteries)
+
+cd /data/dbus-mqtt-battery
+exec python3 dbus-mqtt-battery.py \
+    --broker "$MQTT_BROKER" \
+    --batteries "$BATTERIES" \
+    --instance 512 \
+    --topic-prefix battery \
+    --service-suffix mqtt_chain1 \
+    --product-name "JBD Battery Chain 1"
