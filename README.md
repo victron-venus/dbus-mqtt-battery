@@ -71,11 +71,14 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
 
 ## Services
 
-| Service | D-Bus Name | Source | Description |
-|---------|------------|--------|-------------|
-| Chain 1 | `com.victronenergy.battery.mqtt_chain1` | ESP32 #1 (MQTT `battery/`) | 4 JBD BMS batteries |
-| Chain 2 | `com.victronenergy.battery.mqtt_chain2` | ESP32 #2 (MQTT `battery2/`) | 4 JBD BMS batteries |
-| Chain 3 | `com.victronenergy.battery.virtual_chain` | Calculated | SmartShunt - Chain1 - Chain2 |
+Services are created dynamically based on configuration:
+
+| Service | D-Bus Name | MQTT Topic | Description |
+|---------|------------|------------|-------------|
+| Chain 1 | `com.victronenergy.battery.dbus-mqtt-chain1` | `battery/` | First battery chain |
+| Chain 2 | `com.victronenergy.battery.dbus-mqtt-chain2` | `battery2/` | Second battery chain |
+| Chain N | `com.victronenergy.battery.dbus-mqtt-chainN` | `batteryN/` | Nth battery chain |
+| Virtual | `com.victronenergy.battery.virtual_chain` | — | SmartShunt minus all chains (optional) |
 
 ## Files
 
@@ -112,7 +115,42 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    - Update from GitHub when new versions are available
    - Provide GUI controls via PackageManager
 
-### Option 2: Manual Deploy (All 3 Chains)
+4. **Configure** (optional, create files before or after install):
+   ```bash
+   ssh Cerbo
+   mkdir -p /data/setupOptions/dbus-mqtt-battery
+   
+   # Number of battery chains (default: 2)
+   echo "2" > /data/setupOptions/dbus-mqtt-battery/chains
+   
+   # Batteries per chain (default: 4)
+   echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries
+   
+   # Enable virtual battery - SmartShunt minus all chains (default: false)
+   echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
+   
+   # SmartShunt serial port for virtual battery (default: ttyUSB0)
+   echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
+   ```
+
+5. **Reinstall** to apply configuration changes:
+   - PackageManager → dbus-mqtt-battery → Reinstall
+
+### Configuration Options
+
+| Option | File | Default | Description |
+|--------|------|---------|-------------|
+| Chains | `chains` | `2` | Number of battery chains (1-10) |
+| Batteries | `batteries` | `4` | Batteries per chain |
+| Virtual | `enableVirtual` | `false` | Enable virtual battery calculation |
+| SmartShunt | `smartshunt` | `ttyUSB0` | Serial port for SmartShunt |
+
+**Examples:**
+- 1 chain, 4 batteries, no virtual: `chains=1`
+- 2 chains, 4 batteries each, with virtual: `chains=2`, `enableVirtual=true`
+- 5 chains, 8 batteries each: `chains=5`, `batteries=8`
+
+### Option 2: Manual Deploy
 
 ```bash
 cd ~/victron/dbus-mqtt-battery

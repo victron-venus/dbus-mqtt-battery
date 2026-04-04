@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-04-04
+
+### Added
+- Dynamic chain configuration via setupOptions
+- Configurable number of battery chains (1-10)
+- Optional virtual battery (SmartShunt minus chains)
+- Setup script generates services dynamically
+
+### Changed
+- Services now created at install time based on configuration
+- Removed static service definitions from repository
+- README updated with configuration options
+
 ## [2.6.0] - 2026-04-04
 
 ### Added

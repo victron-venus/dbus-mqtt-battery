@@ -9,9 +9,131 @@ source "/data/SetupHelper/HelperResources/IncludeHelpers"
 
 packageName="dbus-mqtt-battery"
 
-# Default configuration - can be overridden via setup options
-defaultMqttBroker="localhost"
+# Default configuration
+defaultChains="2"
 defaultBatteries="4"
+defaultEnableVirtual="false"
+defaultSmartshunt="ttyUSB0"
+
+# Read configuration from setupOptions
+readConfig() {
+    if [ -f "$setupOptionsDir/chains" ]; then
+        chains=$(cat "$setupOptionsDir/chains")
+    else
+        chains="$defaultChains"
+    fi
+    
+    if [ -f "$setupOptionsDir/batteries" ]; then
+        batteries=$(cat "$setupOptionsDir/batteries")
+    else
+        batteries="$defaultBatteries"
+    fi
+    
+    if [ -f "$setupOptionsDir/enableVirtual" ]; then
+        enableVirtual=$(cat "$setupOptionsDir/enableVirtual")
+    else
+        enableVirtual="$defaultEnableVirtual"
+    fi
+    
+    if [ -f "$setupOptionsDir/smartshunt" ]; then
+        smartshunt=$(cat "$setupOptionsDir/smartshunt")
+    else
+        smartshunt="$defaultSmartshunt"
+    fi
+}
+
+# Create a chain service
+createChainService() {
+    local chainNum=$1
+    local serviceName="dbus-mqtt-chain${chainNum}"
+    local instance=$((511 + chainNum))
+    
+    # Topic prefix: chain1=battery, chain2=battery2, chain3=battery3, etc.
+    if [ "$chainNum" -eq 1 ]; then
+        topicPrefix="battery"
+    else
+        topicPrefix="battery${chainNum}"
+    fi
+    
+    # BMS first flag for chains > 1 (single ESP32 with multiple BMS)
+    if [ "$chainNum" -gt 1 ]; then
+        bmsFirst="--bms-first"
+    else
+        bmsFirst=""
+    fi
+    
+    logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix)"
+    
+    mkdir -p "/var/log/$serviceName"
+    mkdir -p "/service/$serviceName/log"
+    
+    # Main run script
+    cat > "/service/$serviceName/run" << EOF
+#!/bin/sh
+exec 2>&1
+cd /data/dbus-mqtt-battery
+exec python3 dbus-mqtt-battery.py \\
+    --broker 127.0.0.1 \\
+    --batteries $batteries \\
+    --instance $instance \\
+    --topic-prefix $topicPrefix \\
+    --service-suffix $serviceName \\
+    --product-name "JBD Battery Chain $chainNum" $bmsFirst
+EOF
+    chmod +x "/service/$serviceName/run"
+    
+    # Log run script
+    cat > "/service/$serviceName/log/run" << EOF
+#!/bin/sh
+exec svlogd -tt /var/log/$serviceName
+EOF
+    chmod +x "/service/$serviceName/log/run"
+}
+
+# Create virtual battery service
+createVirtualService() {
+    local serviceName="dbus-virtual-chain"
+    
+    logMessage "Creating service: $serviceName"
+    
+    mkdir -p "/var/log/$serviceName"
+    mkdir -p "/service/$serviceName/log"
+    
+    # Main run script
+    cat > "/service/$serviceName/run" << EOF
+#!/bin/sh
+exec 2>&1
+cd /data/dbus-mqtt-battery
+exec python3 dbus-virtual-battery.py --smartshunt /dev/$smartshunt
+EOF
+    chmod +x "/service/$serviceName/run"
+    
+    # Log run script
+    cat > "/service/$serviceName/log/run" << EOF
+#!/bin/sh
+exec svlogd -tt /var/log/$serviceName
+EOF
+    chmod +x "/service/$serviceName/log/run"
+}
+
+# Remove all chain services
+removeServices() {
+    # Remove mqtt chain services
+    for dir in /service/dbus-mqtt-chain*; do
+        if [ -d "$dir" ]; then
+            svc -d "$dir" 2>/dev/null
+            rm -rf "$dir"
+            logMessage "Removed $(basename $dir)"
+        fi
+    done
+    
+    # Remove virtual chain service
+    if [ -d "/service/dbus-virtual-chain" ]; then
+        svc -d "/service/dbus-virtual-chain" 2>/dev/null
+        rm -rf "/service/dbus-virtual-chain"
+        logMessage "Removed dbus-virtual-chain"
+    fi
+}
 
 #### running manually - prompt for input
 if [ "$scriptAction" == 'NONE' ]; then
@@ -22,49 +144,40 @@ fi
 if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
     
-    # Read configuration from setup options or use defaults
-    if [ -f "$setupOptionsDir/mqttBroker" ]; then
-        mqttBroker=$(cat "$setupOptionsDir/mqttBroker")
-    else
-        mqttBroker="$defaultMqttBroker"
-    fi
+    readConfig
+    logMessage "Configuration: chains=$chains, batteries=$batteries, enableVirtual=$enableVirtual"
     
-    if [ -f "$setupOptionsDir/batteries" ]; then
-        batteries=$(cat "$setupOptionsDir/batteries")
-    else
-        batteries="$defaultBatteries"
-    fi
-    
-    # Create log directories
-    mkdir -p /var/log/dbus-mqtt-chain1
-    mkdir -p /var/log/dbus-mqtt-chain2
-    mkdir -p /var/log/dbus-virtual-chain
-    
-    # Install Python scripts to /data/dbus-mqtt-battery
+    # Install Python scripts
     mkdir -p /data/dbus-mqtt-battery
     cp "$scriptDir/dbus-mqtt-battery.py" /data/dbus-mqtt-battery/
     cp "$scriptDir/dbus-virtual-battery.py" /data/dbus-mqtt-battery/
     chmod +x /data/dbus-mqtt-battery/*.py
     
-    # Copy QML files if overlay-fs is available
-    if [ -d "/data/apps/overlay-fs" ]; then
-        if [ -d "$scriptDir/qml" ]; then
-            bash /data/apps/overlay-fs/add-app-and-directory.sh dbus-mqtt-battery /opt/victronenergy/gui 2>/dev/null || true
-            cp "$scriptDir/qml/"*.qml /opt/victronenergy/gui/qml/ 2>/dev/null && logMessage "Installed QML files"
-            restartGui=true
-        fi
+    # Remove old services first (clean install)
+    removeServices
+    
+    # Create chain services based on configuration
+    for i in $(seq 1 $chains); do
+        createChainService $i
+    done
+    
+    # Create virtual service if enabled
+    if [ "$enableVirtual" = "true" ] || [ "$enableVirtual" = "1" ] || [ "$enableVirtual" = "yes" ]; then
+        createVirtualService
     fi
+    
+    logMessage "Installation complete"
 fi
 
 #### uninstall
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
     
-    # Remove Python scripts
+    removeServices
     rm -rf /data/dbus-mqtt-battery
     
-    # QML files will be restored by overlay-fs automatically
+    logMessage "Uninstallation complete"
 fi
 
-# Install/uninstall services and finish
-endScript INSTALL_SERVICE
+# endScript without INSTALL_SERVICE since we manage services manually
+endScript
