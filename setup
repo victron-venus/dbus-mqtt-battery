@@ -55,8 +55,13 @@ createChainService() {
         topicPrefix="battery${chainNum}"
     fi
     
-    # BMS first index for chains > 1 (chain1: BMS 1-4, chain2: BMS 5-8, etc.)
-    local bmsFirstIndex=$(( (chainNum - 1) * batteries + 1 ))
+    # BMS first index - default 1 (each ESP32 numbers its BMS from 1)
+    # Override via setupOptions if using single ESP32 for multiple chains
+    if [ -f "$setupOptionsDir/bmsFirst${chainNum}" ]; then
+        bmsFirstIndex=$(cat "$setupOptionsDir/bmsFirst${chainNum}")
+    else
+        bmsFirstIndex=1
+    fi
     bmsFirst="--bms-first $bmsFirstIndex"
     
     logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix)"
