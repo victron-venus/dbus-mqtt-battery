@@ -12,7 +12,7 @@ packageName="dbus-mqtt-battery"
 # Default configuration
 defaultChains="2"
 defaultBatteries="4"
-defaultEnableVirtual="false"
+defaultEnableVirtual="true"
 defaultSmartshunt="ttyUSB0"
 
 # Read configuration from setupOptions

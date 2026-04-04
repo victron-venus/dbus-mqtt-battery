@@ -142,7 +142,7 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 |--------|------|---------|-------------|
 | Chains | `chains` | `2` | Number of battery chains (1-10) |
 | Batteries | `batteries` | `4` | Batteries per chain |
-| Virtual | `enableVirtual` | `false` | Enable virtual battery calculation |
+| Virtual | `enableVirtual` | `true` | Enable virtual battery calculation |
 | SmartShunt | `smartshunt` | `ttyUSB0` | Serial port for SmartShunt |
 
 **Examples:**
