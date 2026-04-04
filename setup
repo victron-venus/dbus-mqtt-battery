@@ -12,6 +12,7 @@ packageName="dbus-mqtt-battery"
 # Default configuration
 defaultChains="2"
 defaultBatteries="4"
+defaultCellsPerBms="4"
 defaultEnableVirtual="true"
 defaultSmartshunt="ttyUSB0"
 
@@ -27,6 +28,12 @@ readConfig() {
         batteries=$(cat "$setupOptionsDir/batteries")
     else
         batteries="$defaultBatteries"
+    fi
+    
+    if [ -f "$setupOptionsDir/cellsPerBms" ]; then
+        cellsPerBms=$(cat "$setupOptionsDir/cellsPerBms")
+    else
+        cellsPerBms="$defaultCellsPerBms"
     fi
     
     if [ -f "$setupOptionsDir/enableVirtual" ]; then
@@ -77,6 +84,7 @@ cd /data/dbus-mqtt-battery
 exec python3 dbus-mqtt-battery.py \\
     --broker 127.0.0.1 \\
     --batteries $batteries \\
+    --cells-per-bms $cellsPerBms \\
     --instance $instance \\
     --topic-prefix $topicPrefix \\
     --service-suffix $serviceName \\
@@ -153,7 +161,7 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
     
     readConfig
-    logMessage "Configuration: chains=$chains, batteries=$batteries, enableVirtual=$enableVirtual"
+    logMessage "Configuration: chains=$chains, batteries=$batteries, cellsPerBms=$cellsPerBms, enableVirtual=$enableVirtual"
     
     # Install Python scripts
     mkdir -p /data/dbus-mqtt-battery

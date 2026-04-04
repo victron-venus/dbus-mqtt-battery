@@ -527,7 +527,7 @@ class MqttBatteryClient:
     """MQTT client that receives battery data from ESP32"""
     
     def __init__(self, broker: str, port: int, battery_count: int = 4, topic_prefix: str = "battery", 
-                 installed_capacity: float = 280, bms_first: int = 1):
+                 installed_capacity: float = 280, bms_first: int = 1, cells_per_bms: int = 4):
         self.broker = broker
         self.port = port
         self.battery_count = battery_count
@@ -535,6 +535,8 @@ class MqttBatteryClient:
         self.installed_capacity = installed_capacity  # Fixed capacity for series-connected batteries
         # MQTT topic index of first BMS for this chain (chain1: 1, chain2 with 2 BMS: 3 for bms3,bms4)
         self.bms_first = max(1, bms_first)
+        # Cells per BMS module (fixed, not from MQTT to avoid issues with lost BLE connections)
+        self.cells_per_bms = cells_per_bms
         
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
         self.batteries: Dict[int, BatteryData] = {
@@ -730,7 +732,7 @@ class MqttBatteryClient:
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
         all_cells_with_id = []
         all_temps_with_id = []
-        cells_per_bms = 4  # Typical for JBD
+        cells_per_bms = self.mqtt.cells_per_bms
         
         for batt in valid_batts:
             for cell_idx, voltage in batt['cells'].items():
@@ -853,7 +855,7 @@ class DbusAggregateService:
         self.product_name = product_name
         
         # Initialize DVCC controller for dynamic current limiting
-        total_cells = mqtt_client.battery_count * DVCC_CELLS_PER_BMS
+        total_cells = mqtt_client.battery_count * mqtt_client.cells_per_bms
         self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
         self.last_dvcc_log = 0
@@ -906,7 +908,7 @@ class DbusAggregateService:
         self._dbusservice.add_path("/System/NrOfBatteries", self.mqtt.battery_count, writeable=True)
         self._dbusservice.add_path("/System/BatteriesParallel", 1, writeable=True)
         self._dbusservice.add_path("/System/BatteriesSeries", self.mqtt.battery_count, writeable=True)
-        self._dbusservice.add_path("/System/NrOfCellsPerBattery", 4, writeable=True)  # 4 cells per 12V battery
+        self._dbusservice.add_path("/System/NrOfCellsPerBattery", self.mqtt.cells_per_bms, writeable=True)
         
         # Cell voltages (GUI v2)
         self._dbusservice.add_path("/System/MinCellVoltage", None, writeable=True,
@@ -921,8 +923,8 @@ class DbusAggregateService:
             gettextcallback=lambda a, x: "{:.3f}V".format(x) if x else "")
         
         # Individual cell voltages for GUI v2
-        # Total cells = battery_count × cells_per_battery (4 cells per 12V LiFePO4 battery)
-        total_cells = self.mqtt.battery_count * 4
+        # Total cells = battery_count × cells_per_battery
+        total_cells = self.mqtt.battery_count * self.mqtt.cells_per_bms
         
         # Add /System/NrOfCells - required for GUI v2 to know how many cells to display
         self._dbusservice.add_path("/System/NrOfCells", total_cells, writeable=True)
@@ -1036,7 +1038,7 @@ class DbusAggregateService:
         
         # Cell voltages with IDs
         total_cells = data['cell_count']
-        self._dbusservice["/System/NrOfCellsPerBattery"] = 4  # 4 cells per 12V LiFePO4 battery
+        self._dbusservice["/System/NrOfCellsPerBattery"] = self.mqtt.cells_per_bms
         
         if data['min_cell'] is not None:
             self._dbusservice["/System/MinCellVoltage"] = round(data['min_cell'], 3)
@@ -1050,7 +1052,7 @@ class DbusAggregateService:
         
         # Update individual cell voltages for GUI v2
         all_cells = data.get('all_cells', [])
-        total_cells = self.mqtt.battery_count * 4
+        total_cells = self.mqtt.battery_count * self.mqtt.cells_per_bms
         
         # Update /System/NrOfCells
         self._dbusservice["/System/NrOfCells"] = total_cells
@@ -1309,6 +1311,8 @@ def main():
     parser.add_argument('--service-suffix', default='mqtt_chain', help='D-Bus service suffix (default: mqtt_chain)')
     parser.add_argument('--product-name', default='JBD Battery Chain', help='Product name in GUI')
     parser.add_argument('--capacity', type=float, default=280, help='Installed capacity in Ah (for series-connected batteries)')
+    parser.add_argument('--cells-per-bms', type=int, default=4,
+                        help='Number of cells per BMS module (default: 4 for 12V LiFePO4)')
     parser.add_argument('--bms-first', type=int, default=1,
                         help='First MQTT BMS index for this chain (chain1: 1, chain2 with bms3+bms4: 3)')
     args = parser.parse_args()
@@ -1338,7 +1342,8 @@ def main():
 
     # Create MQTT client
     mqtt_client = MqttBatteryClient(
-        args.broker, args.port, args.batteries, args.topic_prefix, args.capacity, args.bms_first
+        args.broker, args.port, args.batteries, args.topic_prefix, args.capacity, 
+        args.bms_first, args.cells_per_bms
     )
     if not mqtt_client.connect():
         logger.error("Failed to connect to MQTT broker")
