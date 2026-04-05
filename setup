@@ -81,7 +81,8 @@ createChainService() {
 #!/bin/sh
 exec 2>&1
 cd /data/dbus-mqtt-battery
-exec python3 dbus-mqtt-battery.py \\
+sleep 2
+exec python3 -u dbus-mqtt-battery.py \\
     --broker 127.0.0.1 \\
     --batteries $batteries \\
     --cells-per-bms $cellsPerBms \\
@@ -92,10 +93,11 @@ exec python3 dbus-mqtt-battery.py \\
 EOF
     chmod +x "/service/$serviceName/run"
     
-    # Log run script
+    # Log run script (use multilog, not svlogd - Venus OS standard)
     cat > "/service/$serviceName/log/run" << EOF
 #!/bin/sh
-exec svlogd -tt /var/log/$serviceName
+exec 2>&1
+exec multilog t s25000 n4 /var/log/$serviceName
 EOF
     chmod +x "/service/$serviceName/log/run"
 }
@@ -120,14 +122,16 @@ createVirtualService() {
 #!/bin/sh
 exec 2>&1
 cd /data/dbus-mqtt-battery
-exec python3 dbus-virtual-battery.py --smartshunt $smartshunt --chains$chainList
+sleep 5
+exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt --chains$chainList
 EOF
     chmod +x "/service/$serviceName/run"
     
-    # Log run script
+    # Log run script (use multilog, not svlogd - Venus OS standard)
     cat > "/service/$serviceName/log/run" << EOF
 #!/bin/sh
-exec svlogd -tt /var/log/$serviceName
+exec 2>&1
+exec multilog t s25000 n4 /var/log/$serviceName
 EOF
     chmod +x "/service/$serviceName/log/run"
 }
