@@ -452,3 +452,21 @@ This project is part of a Victron Venus OS integration suite:
 ## License
 
 MIT License
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature-name`)
+3. Commit your changes
+4. Push to the branch (`git push origin feature-name`)
+5. Create a Pull Request
+
+## Support
+
+For issues specific to:
+- **MQTT bridge**: Check connection to Venus OS MQTT broker
+- **D-Bus integration**: Verify D-Bus service registration
+- **JBD BMS**: Confirm ESP32 publishing data to MQTT
+- **This project**: Open an issue in this repository
+
+**Note:** This is a community project and is not affiliated with Victron Energy.
