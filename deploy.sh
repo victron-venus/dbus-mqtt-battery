@@ -21,14 +21,18 @@ echo ""
 echo ">>> Downloading latest version..."
 ssh "$SSH_HOST" 'rm -rf /data/dbus-mqtt-battery && \
 cd /data && \
-wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/latest.tar.gz | tar -xzf - && \
-mv dbus-mqtt-battery-latest dbus-mqtt-battery && \
+wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/main.tar.gz | tar -xzf - && \
+mv dbus-mqtt-battery-main dbus-mqtt-battery && \
 chmod +x /data/dbus-mqtt-battery/setup'
 
 echo ">>> Running setup install..."
 ssh "$SSH_HOST" '/data/dbus-mqtt-battery/setup install'
 
-# Verify
+# Restart PackageManager to discover package
+echo ">>> Restarting PackageManager..."
+ssh "$SSH_HOST" "svc -t /service/PackageManager 2>/dev/null || true"
+
+# Wait for services to start
 echo ""
 echo ">>> Waiting for services to start..."
 sleep 8
