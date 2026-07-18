@@ -1,5 +1,7 @@
+import importlib.util
 import sys
 from unittest.mock import MagicMock
+from dbus_mqtt_battery import DvccController
 
 # Mock the modules and submodules
 sys.modules['dbus'] = MagicMock()
@@ -12,13 +14,10 @@ sys.modules['gi'] = MagicMock()
 sys.modules['gi.repository'] = MagicMock()
 sys.modules['gi.repository.GLib'] = MagicMock()
 
-# Now load the module
-import importlib.util
 spec = importlib.util.spec_from_file_location("dbus_mqtt_battery", "./dbus-mqtt-battery.py")
 dbus_mqtt_battery = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = dbus_mqtt_battery
 spec.loader.exec_module(dbus_mqtt_battery)
-from dbus_mqtt_battery import DvccController
 
 controller = DvccController(cell_count=4, bms_count=1)
 
