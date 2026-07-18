@@ -985,10 +985,13 @@ class DbusAggregateService:
         
         # Alarms
         for alarm in ['LowVoltage', 'HighVoltage', 'LowCellVoltage', 'HighCellVoltage',
-                      'LowSoc', 'HighChargeCurrent', 'HighDischargeCurrent', 
-                      'CellImbalance', 'InternalFailure', 'HighTemperature', 
+                      'LowSoc', 'HighChargeCurrent', 'HighDischargeCurrent',
+                      'CellImbalance', 'InternalFailure', 'HighTemperature',
                       'LowTemperature', 'HighChargeTemperature', 'LowChargeTemperature']:
             self._dbusservice.add_path(f"/Alarms/{alarm}", 0, writeable=True)
+
+        # Reliability: stale data indicator (0=fresh, 1=stale)
+        self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
 
     def update(self):
         """Update D-Bus values from MQTT data"""
