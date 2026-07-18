@@ -1,3 +1,4 @@
+---
 name: Publish Release Assets
 
 on:
@@ -9,28 +10,30 @@ permissions:
   contents: write
 
 jobs:
-  publish:
+  release:
     runs-on: ubuntu-latest
     steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-      with:
-        egress-policy: audit
-
     - name: Checkout
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-
-    - name: Report release
-      uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
-        script: |
-          const tag = context.ref.replace('refs/tags/', '');
-          console.log('Release published: ' + tag);
+        fetch-depth: 0
 
-          github.rest.repos.createOrUpdateFileContents({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            path: `.releases/${tag}.md`,
-            message: `chore: release ${tag}`,
-            content: Buffer.from(`Release ${tag} published at ${new Date().toISOString()}`).toString('base64')
-          });
+    - name: Create PackageManager archive
+      run: |
+        PKG_NAME="dbus-mqtt-battery"
+        ARCHIVE="${PKG_NAME}-${GITHUB_REF#refs/tags/}.tar.gz"
+        mkdir -p "${PKG_NAME}"
+        cp dbus-mqtt-battery.py "${PKG_NAME}/"
+        cp dbus-virtual-battery.py "${PKG_NAME}/" 2>/dev/null || true
+        cp setup gitHubInfo version "${PKG_NAME}/" 2>/dev/null || true
+        tar -czf "$ARCHIVE" "${PKG_NAME}/"
+        echo "ARCHIVE=$ARCHIVE" >> $GITHUB_OUTPUT
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+      with:
+        body_path: release.txt
+        files: ${{ steps.archive.outputs.ARCHIVE }}
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
