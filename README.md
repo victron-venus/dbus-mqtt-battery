@@ -153,6 +153,28 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 - 2 chains, 4 batteries each, with virtual: `chains=2`, `enableVirtual=true`
 - 5 chains, 8 batteries each: `chains=5`, `batteries=8`
 
+### How PackageManager Works
+
+PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
+
+- Creates chain services (`dbus-mqtt-chain1`, `dbus-mqtt-chain2`, etc.) based on configuration
+- Creates virtual battery service (`dbus-virtual-chain`) if enabled
+- Copies Python scripts to `/data/dbus-mqtt-battery/`
+
+The `gitHubInfo` file tells PackageManager where to download from:
+```
+victron-venus:latest
+```
+
+### Uninstall
+
+Via PackageManager: Settings → PackageManager → dbus-mqtt-battery → Uninstall
+
+Via CLI:
+```bash
+ssh Cerbo '/data/dbus-mqtt-battery/setup uninstall'
+```
+
 ### Option 2: CLI Install (for GUI v2 users)
 
 If you're using GUI v2 (where PackageManager menu is not available), install via SSH:
@@ -410,6 +432,37 @@ rm -rf /var/log/dbus-mqtt-chain1 /var/log/dbus-mqtt-chain2 /var/log/dbus-virtual
 | /Io/AllowToDischarge | Discharge FET status |
 
 ## Troubleshooting
+
+### Package not showing in PackageManager
+
+PackageManager's `AddStoredPackages()` requires both a `version` file AND a `setup` script in `/data/dbus-mqtt-battery/`.
+
+**Check**:
+```bash
+ls -la /data/dbus-mqtt-battery/version /data/dbus-mqtt-battery/setup
+cat /data/dbus-mqtt-battery/gitHubInfo   # should show: victron-venus:latest
+```
+
+**Common issues**:
+- `setup` file missing → PackageManager skips the directory silently
+- `version` file missing or empty → PackageManager skips
+- `gitHubInfo` missing → can't download updates
+
+**Fix**:
+```bash
+# Copy missing files
+scp setup gitHubInfo version root@cerbo:/data/dbus-mqtt-battery/
+ssh root@cerbo "chmod +x /data/dbus-mqtt-battery/setup"
+
+# Restart PackageManager to re-scan
+svc -t /service/PackageManager
+```
+
+**Verify**:
+```bash
+tail -20 /var/log/PackageManager/current | grep dbus-mqtt-battery
+# Should show: checking dbus-mqtt-battery / adding dbus-mqtt-battery
+```
 
 ### Chain 2 shows N/A
 ESP32 #2 needs to be flashed and connected to WiFi/MQTT.
