@@ -24,6 +24,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          # Re-approving on every sync ensures the PR remains approved even if 
+          # Re-approving on every sync ensures the PR remains approved even if
           # "Dismiss stale pull request approvals when new commits are pushed" is enabled.
           gh pr review "$PR_URL" --approve || echo "Failed to approve. Check Organization settings (Actions > General > Workflow permissions)"

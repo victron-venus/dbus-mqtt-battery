@@ -1,18 +1,20 @@
+"""Tests for the DvccController class."""
+
 import unittest
 import sys
 import importlib.util
 from unittest.mock import MagicMock
 
 # Mock the modules and submodules
-sys.modules['dbus'] = MagicMock()
-sys.modules['dbus.mainloop.glib'] = MagicMock()
-sys.modules['vedbus'] = MagicMock()
-sys.modules['paho.mqtt'] = MagicMock()
-sys.modules['paho.mqtt.client'] = MagicMock()
-sys.modules['paho.mqtt.enums'] = MagicMock()
-sys.modules['gi'] = MagicMock()
-sys.modules['gi.repository'] = MagicMock()
-sys.modules['gi.repository.GLib'] = MagicMock()
+sys.modules["dbus"] = MagicMock()
+sys.modules["dbus.mainloop.glib"] = MagicMock()
+sys.modules["vedbus"] = MagicMock()
+sys.modules["paho.mqtt"] = MagicMock()
+sys.modules["paho.mqtt.client"] = MagicMock()
+sys.modules["paho.mqtt.enums"] = MagicMock()
+sys.modules["gi"] = MagicMock()
+sys.modules["gi.repository"] = MagicMock()
+sys.modules["gi.repository.GLib"] = MagicMock()
 
 # Now load the module
 spec = importlib.util.spec_from_file_location("dbus_mqtt_battery", "./dbus-mqtt-battery.py")
@@ -22,7 +24,9 @@ spec.loader.exec_module(dbus_mqtt_battery)
 from dbus_mqtt_battery import DvccController
 
 
-class TestDvccController(unittest.TestCase):
+class TestDvccController(unittest.TestCase):  # pylint: disable=too-many-public-methods
+    """Tests for the DvccController class."""
+
     def setUp(self):
         # Typical setup for a 4S battery system with 1 battery
         self.controller = DvccController(cell_count=4, bms_count=1)
@@ -265,63 +269,63 @@ class TestDvccController(unittest.TestCase):
         """Test that the main calculate method takes the minimum of all factors"""
         # Mock data that would give different CCL values from each source
         data = {
-            'max_cell': 3.4,      # Would give ~100A from voltage
-            'min_cell': 3.1,
-            'max_cell_id': 1,
-            'min_cell_id': 1,
-            'max_temp': 25.0,
-            'min_temp': 20.0,
-            'soc': 50.0,
-            'allow_charge': True,
-            'allow_discharge': True
+            "max_cell": 3.4,  # Would give ~100A from voltage
+            "min_cell": 3.1,
+            "max_cell_id": 1,
+            "min_cell_id": 1,
+            "max_temp": 25.0,
+            "min_temp": 20.0,
+            "soc": 50.0,
+            "allow_charge": True,
+            "allow_discharge": True,
         }
 
         result = self.controller.calculate(data)
 
         # With normal temp, SoC, and cell voltage 3.4V (which is below START_LIMIT 3.45V)
         # All should give 100A, 120A, 100A, 100A -> min is 100A
-        self.assertEqual(result['ccl'], 100.0)
-        self.assertEqual(result['dcl'], 120.0)
-        self.assertEqual(result['cvl'], 3.65 * 4)  # DVCC_CELL_MAX_VOLTAGE * cell_count
-        self.assertIn('ccl_reason', result)
-        self.assertIn('dcl_reason', result)
+        self.assertEqual(result["ccl"], 100.0)
+        self.assertEqual(result["dcl"], 120.0)
+        self.assertEqual(result["cvl"], 3.65 * 4)  # DVCC_CELL_MAX_VOLTAGE * cell_count
+        self.assertIn("ccl_reason", result)
+        self.assertIn("dcl_reason", result)
 
     def test_calculate_respects_bms_charge_block(self):
         """Test that BMS charge blocking overrides CCL to 0"""
         data = {
-            'max_cell': 3.4,
-            'min_cell': 3.1,
-            'max_cell_id': 1,
-            'min_cell_id': 1,
-            'max_temp': 25.0,
-            'min_temp': 20.0,
-            'soc': 50.0,
-            'allow_charge': False,  # BUS says don't charge
-            'allow_discharge': True
+            "max_cell": 3.4,
+            "min_cell": 3.1,
+            "max_cell_id": 1,
+            "min_cell_id": 1,
+            "max_temp": 25.0,
+            "min_temp": 20.0,
+            "soc": 50.0,
+            "allow_charge": False,  # BUS says don't charge
+            "allow_discharge": True,
         }
 
         result = self.controller.calculate(data)
-        self.assertEqual(result['ccl'], 0.0)
-        self.assertEqual(result['ccl_reason'], 'bms_blocked')
+        self.assertEqual(result["ccl"], 0.0)
+        self.assertEqual(result["ccl_reason"], "bms_blocked")
 
     def test_calculate_respects_bms_discharge_block(self):
         """Test that BMS discharge blocking overrides DCL to 0"""
         data = {
-            'max_cell': 3.4,
-            'min_cell': 3.1,
-            'max_cell_id': 1,
-            'min_cell_id': 1,
-            'max_temp': 25.0,
-            'min_temp': 20.0,
-            'soc': 50.0,
-            'allow_charge': True,
-            'allow_discharge': False  # BMS says don't discharge
+            "max_cell": 3.4,
+            "min_cell": 3.1,
+            "max_cell_id": 1,
+            "min_cell_id": 1,
+            "max_temp": 25.0,
+            "min_temp": 20.0,
+            "soc": 50.0,
+            "allow_charge": True,
+            "allow_discharge": False,  # BMS says don't discharge
         }
 
         result = self.controller.calculate(data)
-        self.assertEqual(result['dcl'], 0.0)
-        self.assertEqual(result['dcl_reason'], 'bms_blocked')
+        self.assertEqual(result["dcl"], 0.0)
+        self.assertEqual(result["dcl_reason"], "bms_blocked")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

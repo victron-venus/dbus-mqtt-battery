@@ -128,16 +128,16 @@ echo ">>> Installing GUI v2 QML files..."
 if [ -d "/data/apps/overlay-fs" ]; then
     # Add overlay for GUI directory
     bash /data/apps/overlay-fs/add-app-and-directory.sh dbus-mqtt-battery /opt/victronenergy/gui 2>/dev/null || true
-    
+
     # Copy QML files if available
     QML_SOURCE="$INSTALL_DIR/qml"
     QML_DEST="/opt/victronenergy/gui/qml"
-    
+
     if [ -d "$QML_SOURCE" ]; then
         cp "$QML_SOURCE/PageBattery.qml" "$QML_DEST/" 2>/dev/null && echo "Installed PageBattery.qml"
         cp "$QML_SOURCE/PageBatteryDbusSerialbattery.qml" "$QML_DEST/" 2>/dev/null && echo "Installed PageBatteryDbusSerialbattery.qml"
         cp "$QML_SOURCE/PageBatteryDbusSerialbatteryCellVoltages.qml" "$QML_DEST/" 2>/dev/null && echo "Installed PageBatteryDbusSerialbatteryCellVoltages.qml"
-        
+
         # Restart GUI to apply changes
         svc -d /service/gui && sleep 1 && svc -u /service/gui
         echo "GUI restarted to apply QML changes"

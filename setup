@@ -23,25 +23,25 @@ readConfig() {
     else
         chains="$defaultChains"
     fi
-    
+
     if [ -f "$setupOptionsDir/batteries" ]; then
         batteries=$(cat "$setupOptionsDir/batteries")
     else
         batteries="$defaultBatteries"
     fi
-    
+
     if [ -f "$setupOptionsDir/cellsPerBms" ]; then
         cellsPerBms=$(cat "$setupOptionsDir/cellsPerBms")
     else
         cellsPerBms="$defaultCellsPerBms"
     fi
-    
+
     if [ -f "$setupOptionsDir/enableVirtual" ]; then
         enableVirtual=$(cat "$setupOptionsDir/enableVirtual")
     else
         enableVirtual="$defaultEnableVirtual"
     fi
-    
+
     if [ -f "$setupOptionsDir/smartshunt" ]; then
         smartshunt=$(cat "$setupOptionsDir/smartshunt")
     else
@@ -54,14 +54,14 @@ createChainService() {
     local chainNum=$1
     local serviceName="dbus-mqtt-chain${chainNum}"
     local instance=$((511 + chainNum))
-    
+
     # Topic prefix: chain1=battery, chain2=battery2, chain3=battery3, etc.
     if [ "$chainNum" -eq 1 ]; then
         topicPrefix="battery"
     else
         topicPrefix="battery${chainNum}"
     fi
-    
+
     # BMS first index - default 1 (each ESP32 numbers its BMS from 1)
     # Override via setupOptions if using single ESP32 for multiple chains
     if [ -f "$setupOptionsDir/bmsFirst${chainNum}" ]; then
@@ -70,12 +70,12 @@ createChainService() {
         bmsFirstIndex=1
     fi
     bmsFirst="--bms-first $bmsFirstIndex"
-    
+
     logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix)"
-    
+
     mkdir -p "/var/log/$serviceName"
     mkdir -p "/service/$serviceName/log"
-    
+
     # Main run script
     cat > "/service/$serviceName/run" << EOF
 #!/bin/sh
@@ -92,7 +92,7 @@ exec python3 -u dbus-mqtt-battery.py \\
     --product-name "JBD Battery Chain $chainNum" $bmsFirst
 EOF
     chmod +x "/service/$serviceName/run"
-    
+
     # Log run script (use multilog, not svlogd - Venus OS standard)
     cat > "/service/$serviceName/log/run" << EOF
 #!/bin/sh
@@ -105,18 +105,18 @@ EOF
 # Create virtual battery service
 createVirtualService() {
     local serviceName="dbus-virtual-chain"
-    
+
     # Build chain list for virtual battery
     local chainList=""
     for i in $(seq 1 $chains); do
         chainList="$chainList dbus-mqtt-chain${i}"
     done
-    
+
     logMessage "Creating service: $serviceName (chains:$chainList)"
-    
+
     mkdir -p "/var/log/$serviceName"
     mkdir -p "/service/$serviceName/log"
-    
+
     # Main run script
     cat > "/service/$serviceName/run" << EOF
 #!/bin/sh
@@ -126,7 +126,7 @@ sleep 5
 exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt --chains$chainList
 EOF
     chmod +x "/service/$serviceName/run"
-    
+
     # Log run script (use multilog, not svlogd - Venus OS standard)
     cat > "/service/$serviceName/log/run" << EOF
 #!/bin/sh
@@ -146,7 +146,7 @@ removeServices() {
             logMessage "Removed $(basename $dir)"
         fi
     done
-    
+
     # Remove virtual chain service
     if [ -d "/service/dbus-virtual-chain" ]; then
         svc -d "/service/dbus-virtual-chain" 2>/dev/null
@@ -163,10 +163,10 @@ fi
 #### install
 if [ "$scriptAction" == 'INSTALL' ]; then
     logMessage "Installing $packageName"
-    
+
     readConfig
     logMessage "Configuration: chains=$chains, batteries=$batteries, cellsPerBms=$cellsPerBms, enableVirtual=$enableVirtual"
-    
+
     # Install Python scripts
     mkdir -p /data/dbus-mqtt-battery
     cp "$scriptDir/dbus-mqtt-battery.py" /data/dbus-mqtt-battery/
@@ -193,41 +193,41 @@ if [ "$scriptAction" == 'INSTALL' ]; then
         chmod +x /data/dbus-mqtt-battery/overlay-fs/*.sh 2>/dev/null || true
         logMessage "Installed overlay-fs scripts"
     fi
-    
+
     # Remove old services first (clean install)
     removeServices
-    
+
     # Create chain services based on configuration
     for i in $(seq 1 $chains); do
         createChainService $i
     done
-    
+
     # Create virtual service if enabled
     if [ "$enableVirtual" = "true" ] || [ "$enableVirtual" = "1" ] || [ "$enableVirtual" = "yes" ]; then
         createVirtualService
     fi
-    
+
     # Register with PackageManager (for GUI v1 management)
     pmDir="/data/packageManager/$packageName"
     mkdir -p "$pmDir"
     [ -f "$scriptDir/gitHubInfo" ] && cp "$scriptDir/gitHubInfo" "$pmDir/"
     ln -sf "$scriptDir" "$pmDir/current"
     svc -t /service/PackageManager 2>/dev/null || true
-    
+
     logMessage "Installation complete"
 fi
 
 #### uninstall
 if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
-    
+
     removeServices
     # Clean up overlay-fs if it was set up
     [ -x /data/dbus-mqtt-battery/overlay-fs/disable.sh ] && /data/dbus-mqtt-battery/overlay-fs/disable.sh 2>/dev/null || true
     rm -rf /data/dbus-mqtt-battery
     rm -rf /data/packageManager/$packageName
     svc -t /service/PackageManager 2>/dev/null || true
-    
+
     logMessage "Uninstallation complete"
 fi
 

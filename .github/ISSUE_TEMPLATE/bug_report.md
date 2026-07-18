@@ -10,15 +10,15 @@ assignees: ''
 A clear description of the bug.
 
 ## Environment
-- **Venus OS version**: 
+- **Venus OS version**:
 - **Hardware**: (Cerbo GX / Raspberry Pi / etc.)
-- **Inverter model**: 
-- **Python version**: 
+- **Inverter model**:
+- **Python version**:
 
 ## Steps to Reproduce
-1. 
-2. 
-3. 
+1.
+2.
+3.
 
 ## Expected Behavior
 What you expected to happen.

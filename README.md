@@ -119,16 +119,16 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    ```bash
    ssh Cerbo
    mkdir -p /data/setupOptions/dbus-mqtt-battery
-   
+
    # Number of battery chains (default: 2)
    echo "2" > /data/setupOptions/dbus-mqtt-battery/chains
-   
+
    # Batteries per chain (default: 4)
    echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries
-   
+
    # SmartShunt serial port for virtual battery (default: ttyUSB0)
    echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
-   
+
    # Disable virtual battery if you don't have SmartShunt (enabled by default)
    echo "false" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
    ```
@@ -253,7 +253,7 @@ chmod +x /service/dbus-mqtt-chain1/log/run'
 cd esphome
 esphome run jbd-all-batteries2.yaml
 
-# Deploy service  
+# Deploy service
 ssh Cerbo 'mkdir -p /service/dbus-mqtt-chain2/log /var/log/dbus-mqtt-chain2 && \
 cat > /service/dbus-mqtt-chain2/run << "EOF"
 #!/bin/sh
