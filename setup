@@ -172,6 +172,27 @@ if [ "$scriptAction" == 'INSTALL' ]; then
     cp "$scriptDir/dbus-mqtt-battery.py" /data/dbus-mqtt-battery/
     cp "$scriptDir/dbus-virtual-battery.py" /data/dbus-mqtt-battery/
     chmod +x /data/dbus-mqtt-battery/*.py
+
+    # Install QML files (GUI pages)
+    if [ -d "$scriptDir/qml" ]; then
+        mkdir -p /data/dbus-mqtt-battery/qml
+        cp -r "$scriptDir/qml/"*.qml /data/dbus-mqtt-battery/qml/ 2>/dev/null || true
+        logMessage "Installed QML files"
+    fi
+
+    # Install QML overlay files (if overlay-fs is set up)
+    if [ -d "$scriptDir/qml/overlay" ] && [ -d "/data/apps/overlay-fs/data/gui/upper/qml" ]; then
+        cp -r "$scriptDir/qml/overlay/"*.qml /data/apps/overlay-fs/data/gui/upper/qml/ 2>/dev/null || true
+        logMessage "Installed QML overlay files"
+    fi
+
+    # Install overlay-fs (GUI overlay scripts)
+    if [ -d "$scriptDir/overlay-fs" ]; then
+        mkdir -p /data/dbus-mqtt-battery/overlay-fs
+        cp -r "$scriptDir/overlay-fs/"* /data/dbus-mqtt-battery/overlay-fs/ 2>/dev/null || true
+        chmod +x /data/dbus-mqtt-battery/overlay-fs/*.sh 2>/dev/null || true
+        logMessage "Installed overlay-fs scripts"
+    fi
     
     # Remove old services first (clean install)
     removeServices
@@ -201,6 +222,8 @@ if [ "$scriptAction" == 'UNINSTALL' ]; then
     logMessage "Uninstalling $packageName"
     
     removeServices
+    # Clean up overlay-fs if it was set up
+    [ -x /data/dbus-mqtt-battery/overlay-fs/disable.sh ] && /data/dbus-mqtt-battery/overlay-fs/disable.sh 2>/dev/null || true
     rm -rf /data/dbus-mqtt-battery
     rm -rf /data/packageManager/$packageName
     svc -t /service/PackageManager 2>/dev/null || true
