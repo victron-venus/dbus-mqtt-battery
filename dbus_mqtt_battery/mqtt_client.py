@@ -13,7 +13,7 @@ from threading import Lock
 from time import time
 from typing import Any, Dict, Optional
 
-from bms_data import BatteryData
+from .bms_data import BatteryData
 
 logger = logging.getLogger("MqttBattery")
 

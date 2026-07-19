@@ -170,7 +170,7 @@ class BatteryData:
                     valid_temps = [t for t in self.temperatures.values() if t > -40]
                     if valid_temps:
                         self.temperature = sum(valid_temps) / len(valid_temps)
-                except:
+                except (TypeError, ValueError, IndexError):
                     pass
             elif key == "charging":
                 self.charging = str(value).upper() in ("ON", "TRUE", "1")
@@ -186,7 +186,7 @@ class BatteryData:
                     cell_idx = int(key.split("_")[1])
                     self.cells[cell_idx] = float(value)
                     self.cell_count = max(self.cell_count, len(self.cells))
-                except:
+                except (TypeError, ValueError, IndexError):
                     pass
             self.last_update = time()
 
@@ -412,7 +412,7 @@ class MqttBatteryClient:
             elif sensor_name == "capacity_total":
                 self.total_capacity = val
             self.total_updated = time()
-        except:
+        except (TypeError, ValueError):
             pass
 
     def get_aggregate_data(self) -> Dict[str, Any]:
@@ -892,8 +892,8 @@ class DbusAggregateService:
                     # Legacy path for backward compatibility (1-indexed)
                     self._dbusservice[f"/Voltages/Cell{cell_id}"] = voltage_rounded
                     self._dbusservice[f"/Balances/Cell{cell_id}"] = 0
-                except:
-                    pass
+                except (KeyError, TypeError, ValueError):
+                    logger.debug("Failed to write cell voltage to D-Bus for cell %d", cell_id)
 
         # Update per-battery temperatures
         temps = data.get("temperatures", {})
@@ -901,8 +901,8 @@ class DbusAggregateService:
             if temp is not None:
                 try:
                     self._dbusservice[f"/System/Temperature{bms_id}"] = round(temp, 1)
-                except:
-                    pass
+                except (KeyError, TypeError, ValueError):
+                    logger.debug("Failed to write temperature to D-Bus for BMS %d", bms_id)
 
         # Temperature with IDs
         if data.get("min_temp") is not None:
@@ -1259,6 +1259,9 @@ def main():
     gc_counter = 0
     GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
 
+    # Heartbeat file for watchdog
+    heartbeat_file = "/run/dbus-mqtt-battery.alive"
+
     def poll():
         """Periodic update with memory management"""
         nonlocal gc_counter
@@ -1272,6 +1275,13 @@ def main():
         if gc_counter >= GC_INTERVAL:
             gc_counter = 0
             gc.collect()
+
+        # Write heartbeat for watchdog
+        try:
+            with open(heartbeat_file, "w", encoding="utf-8") as f:
+                f.write(str(int(time())))
+        except OSError:
+            pass
 
         return True
 
