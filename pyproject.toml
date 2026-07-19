@@ -1,4 +1,5 @@
 [tool.pylint.messages_control]
+ignore-paths = ["^.venv/"]
 # Venus OS specific patterns - expected due to framework constraints
 disable = [
     "C0103",  # Invalid name (legacy naming conventions)

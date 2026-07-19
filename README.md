@@ -11,7 +11,7 @@
 [![GitHub forks](https://img.shields.io/github/forks/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/network/members)
 [![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/watchers)
 [![GitHub contributors](https://img.shields.io/github/contributors/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/graphs/contributors)
-[![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/issues)
+[![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venues/dbus-mqtt-battery/issues)
 [![GitHub closed issues](https://img.shields.io/github/issues-closed/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/issues?q=is%3Aissue+is%3Aclosed)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/pulls)
 [![GitHub last commit](https://img.shields.io/github/last-commit/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/commits/main)
@@ -28,45 +28,54 @@ MQTT to D-Bus bridge for JBD BMS batteries via ESP32, plus virtual battery calcu
 
 ## System Architecture
 
-```
-                                     ┌─────────────────────────────────────┐
-                                     │         Venus OS (Cerbo GX)         │
-                                     │                                     │
- [Chain 1: 4x JBD BMS]               │  ┌─────────────────────────────┐    │
-        │                            │  │    dbus-mqtt-battery.py     │    │
-        │ BLE                        │  │    (--topic-prefix battery) │    │
-        ▼                            │  │    → mqtt_chain1            │    │
- [ESP32 #1] ───MQTT───────────────────▶ └─────────────────────────────┘    │
- topic: battery                      │                │                    │
-                                     │                ▼                    │
- [Chain 2: 4x JBD BMS]               │  ┌─────────────────────────────┐    │
-        │                            │  │    dbus-mqtt-battery.py     │    │
-        │ BLE                        │  │    (--topic-prefix battery2)│    │
-        ▼                            │  │    → mqtt_chain2            │    │
- [ESP32 #2] ───MQTT───────────────────▶ └─────────────────────────────┘    │
- topic: battery2                     │                │                    │
-                                     │                ▼                    │
- [Chain 3: 4x Batteries NO BMS]      │  ┌─────────────────────────────┐    │
-        │                            │  │   dbus-virtual-battery.py   │    │
-        │ Shunt                      │  │   SmartShunt - Chain1 - 2   │    │
-        ▼                            │  │    → virtual_chain          │    │
- [SmartShunt] ──────VE.Direct─────────▶ └─────────────────────────────┘    │
-                                     │                │                    │
-                                     │                ▼                    │
-                                     │        ┌─────────────┐              │
-                                     │        │   D-Bus     │              │
-                                     │        │             │              │
-                                     │        │ mqtt_chain1 │              │
-                                     │        │ mqtt_chain2 │              │
-                                     │        │virtual_chain│              │
-                                     │        └──────┬──────┘              │
-                                     │               │                     │
-                                     │               ▼                     │
-                                     │        ┌─────────────┐              │
-                                     │        │  Victron    │              │
-                                     │        │  GUI v2     │              │
-                                     │        └─────────────┘              │
-                                     └─────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Chain1["Chain 1: 4x JBD BMS"]
+        BMS1_1["BMS 1"]
+        BMS1_2["BMS 2"]
+        BMS1_3["BMS 3"]
+        BMS1_4["BMS 4"]
+    end
+
+    subgraph Chain2["Chain 2: 4x JBD BMS"]
+        BMS2_1["BMS 1"]
+        BMS2_2["BMS 2"]
+        BMS2_3["BMS 3"]
+        BMS2_4["BMS 4"]
+    end
+
+    subgraph Venus["Venus OS (Cerbo GX)"]
+        ESP1["ESP32 #1\nBLE → MQTT"]
+        ESP2["ESP32 #2\nBLE → MQTT"]
+        DMB1["dbus-mqtt-battery\n(topic: battery)"]
+        DMB2["dbus-mqtt-battery\n(topic: battery2)"]
+        VBT["dbus-virtual-battery"]
+        DBUS["D-Bus"]
+        GUI["Victron GUI v2"]
+    end
+
+    subgraph Shunt["SmartShunt"]
+        SS["SmartShunt\n VE.Direct"]
+    end
+
+    Chain1 -->|"BLE"| ESP1
+    ESP1 -->|"battery/*"| DMB1
+    DMB1 -->|"mqtt_chain1"| DBUS
+
+    Chain2 -->|"BLE"| ESP2
+    ESP2 -->|"battery2/*"| DMB2
+    DMB2 -->|"mqtt_chain2"| DBUS
+
+    SS -->|"ttyUSB"| VBT
+    VBT -->|"virtual_chain"| DBUS
+
+    DBUS --> GUI
+
+    style DMB1 fill:#4ecdc4,color:#fff
+    style DMB2 fill:#4ecdc4,color:#fff
+    style VBT fill:#9b59b6,color:#fff
+    style ESP1 fill:#e67e22,color:#fff
+    style ESP2 fill:#e67e22,color:#fff
 ```
 
 ## Services
@@ -75,20 +84,10 @@ Services are created dynamically based on configuration:
 
 | Service | D-Bus Name | MQTT Topic | Description |
 |---------|------------|------------|-------------|
-| Chain 1 | `com.victronenergy.battery.dbus-mqtt-chain1` | `battery/` | First battery chain |
-| Chain 2 | `com.victronenergy.battery.dbus-mqtt-chain2` | `battery2/` | Second battery chain |
-| Chain N | `com.victronenergy.battery.dbus-mqtt-chainN` | `batteryN/` | Nth battery chain |
+| Chain 1 | `com.victronenergy.battery.mqtt_chain1` | `battery/` | First battery chain |
+| Chain 2 | `com.victronenergy.battery.mqtt_chain2` | `battery2/` | Second battery chain |
+| Chain N | `com.victronenergy.battery.mqtt_chainN` | `batteryN/` | Nth battery chain |
 | Virtual | `com.victronenergy.battery.virtual_chain` | — | SmartShunt minus all chains (optional) |
-
-## Files
-
-| File | Description |
-|------|-------------|
-| `dbus-mqtt-battery.py` | MQTT to D-Bus bridge for ESP32 |
-| `dbus-virtual-battery.py` | Virtual battery calculator (no physical BMS) |
-| `deploy.sh` | Deploy via SetupHelper from local machine |
-| `deploy.sh` | Deploy single chain |
-| `install.sh` | Install script (run on Venus OS) |
 
 ## Installation
 
@@ -213,281 +212,13 @@ chmod +x deploy.sh
 
 This downloads the latest version from GitHub and runs `setup install`.
 
-## Individual Chain Deployment
+## Documentation
 
-### Chain 1 (ESP32 #1)
+- [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
 
-```bash
-# Flash ESP32 #1
-cd esphome
-esphome run jbd-all-batteries1.yaml
+## Documentation
 
-# Deploy service
-ssh Cerbo 'mkdir -p /data/apps/dbus-mqtt-battery /service/dbus-mqtt-chain1/log /var/log/dbus-mqtt-chain1'
-scp dbus-mqtt-battery.py Cerbo:/data/apps/dbus-mqtt-battery/
-ssh Cerbo 'chmod +x /data/apps/dbus-mqtt-battery/dbus-mqtt-battery.py && \
-cat > /service/dbus-mqtt-chain1/run << "EOF"
-#!/bin/sh
-exec 2>&1
-cd /data/apps/dbus-mqtt-battery
-exec python3 dbus-mqtt-battery.py \
-    --broker <MQTT_BROKER_IP> \
-    --batteries 4 \
-    --instance 512 \
-    --topic-prefix battery \
-    --service-suffix mqtt_chain1 \
-    --product-name "JBD Battery Chain 1"
-EOF
-chmod +x /service/dbus-mqtt-chain1/run && \
-cat > /service/dbus-mqtt-chain1/log/run << "LOGEOF"
-#!/bin/sh
-exec svlogd -tt /var/log/dbus-mqtt-chain1
-LOGEOF
-chmod +x /service/dbus-mqtt-chain1/log/run'
-```
-
-### Chain 2 (ESP32 #2)
-
-```bash
-# Flash ESP32 #2
-cd esphome
-esphome run jbd-all-batteries2.yaml
-
-# Deploy service
-ssh Cerbo 'mkdir -p /service/dbus-mqtt-chain2/log /var/log/dbus-mqtt-chain2 && \
-cat > /service/dbus-mqtt-chain2/run << "EOF"
-#!/bin/sh
-exec 2>&1
-cd /data/apps/dbus-mqtt-battery
-exec python3 dbus-mqtt-battery.py \
-    --broker <MQTT_BROKER_IP> \
-    --batteries 4 \
-    --instance 513 \
-    --topic-prefix battery2 \
-    --service-suffix mqtt_chain2 \
-    --product-name "JBD Battery Chain 2"
-EOF
-chmod +x /service/dbus-mqtt-chain2/run && \
-cat > /service/dbus-mqtt-chain2/log/run << "LOGEOF"
-#!/bin/sh
-exec svlogd -tt /var/log/dbus-mqtt-chain2
-LOGEOF
-chmod +x /service/dbus-mqtt-chain2/log/run'
-```
-
-### Chain 3 (Virtual - No BMS)
-
-```bash
-# Deploy virtual battery service
-scp dbus-virtual-battery.py Cerbo:/data/apps/dbus-mqtt-battery/
-ssh Cerbo 'chmod +x /data/apps/dbus-mqtt-battery/dbus-virtual-battery.py && \
-mkdir -p /service/dbus-virtual-chain/log /var/log/dbus-virtual-chain && \
-cat > /service/dbus-virtual-chain/run << "EOF"
-#!/bin/sh
-exec 2>&1
-cd /data/apps/dbus-mqtt-battery
-exec python3 dbus-virtual-battery.py \
-    --smartshunt ttyUSB4 \
-    --chains mqtt_chain1 mqtt_chain2 \
-    --instance 514 \
-    --product-name "JBD Battery Chain 3" \
-    --capacity 280
-EOF
-chmod +x /service/dbus-virtual-chain/run && \
-cat > /service/dbus-virtual-chain/log/run << "LOGEOF"
-#!/bin/sh
-exec svlogd -tt /var/log/dbus-virtual-chain
-LOGEOF
-chmod +x /service/dbus-virtual-chain/log/run'
-```
-
-## ESP32 Configuration
-
-### ESP32 #1 (Chain 1)
-- ESPHome config: `esphome/jbd-all-batteries1.yaml`
-- MQTT topic prefix: `battery`
-- BMS MAC addresses: configured in YAML
-
-### ESP32 #2 (Chain 2)
-- ESPHome config: `esphome/jbd-all-batteries2.yaml`
-- MQTT topic prefix: `battery2`
-- BMS MAC addresses: configured in YAML
-
-## MQTT Topics
-
-### Chain 1 (topic_prefix: battery)
-```
-battery/sensor/voltage_bms1/state
-battery/sensor/current_bms1/state
-battery/sensor/soc_bms1/state
-battery/sensor/voltage_total/state
-...
-```
-
-### Chain 2 (topic_prefix: battery2)
-```
-battery2/sensor/voltage_bms1/state
-battery2/sensor/current_bms1/state
-battery2/sensor/soc_bms1/state
-battery2/sensor/voltage_total/state
-...
-```
-
-## Command Line Arguments
-
-### dbus-mqtt-battery.py
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--broker` | `<MQTT_BROKER_IP>` | MQTT broker address |
-| `--port` | `1883` | MQTT broker port |
-| `--batteries` | `4` | Number of batteries in this chain |
-| `--bms-first` | `1` | First MQTT BMS index for this chain (see multi-chain below) |
-| `--instance` | `512` | D-Bus device instance |
-| `--topic-prefix` | `battery` | MQTT topic prefix |
-| `--service-suffix` | `mqtt_chain` | D-Bus service suffix |
-| `--product-name` | `JBD Battery Chain` | Product name in GUI |
-| `--capacity` | `280` | Installed Ah (series string) |
-
-**Multi-chain from one ESP (topics `battery/sensor/..._bms1` … `_bms4`):** run two services with different `--service-suffix` and BMS ranges, for example:
-
-- Chain 1: `--batteries 2 --bms-first 1 --service-suffix mqtt_chain1` → uses `bms1`, `bms2`
-- Chain 2: `--batteries 2 --bms-first 3 --service-suffix mqtt_chain2` → uses `bms3`, `bms4`
-
-**`voltage_total` without `current_total`:** if the GUI showed **0 A** while per-BMS MQTT had real current, the script was using stale `current_total=0`. v2.6+ uses per-BMS current when `current_total` was never published.
-
-### dbus-virtual-battery.py
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `--smartshunt` | `ttyUSB4` | SmartShunt D-Bus suffix |
-| `--chains` | `mqtt_chain1 mqtt_chain2` | Chains to subtract |
-| `--instance` | `514` | D-Bus device instance |
-| `--product-name` | `JBD Battery Chain 3` | Product name in GUI |
-| `--capacity` | `280` | Chain capacity in Ah |
-
-## Service Management (on Venus OS)
-
-```bash
-# Check all services
-svstat /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
-
-# Restart specific service
-svc -t /service/dbus-mqtt-chain1
-
-# Stop service
-svc -d /service/dbus-mqtt-chain1
-
-# Start service
-svc -u /service/dbus-mqtt-chain1
-
-# View logs
-tail -f /var/log/dbus-mqtt-chain1/current
-tail -f /var/log/dbus-mqtt-chain2/current
-tail -f /var/log/dbus-virtual-chain/current
-```
-
-## Verify D-Bus Values
-
-```bash
-ssh Cerbo 'echo "=== Chain 1 ===" && \
-dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue && \
-dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Current GetValue && \
-dbus -y com.victronenergy.battery.mqtt_chain1 /Soc GetValue && \
-echo "=== Chain 2 ===" && \
-dbus -y com.victronenergy.battery.mqtt_chain2 /Dc/0/Voltage GetValue && \
-dbus -y com.victronenergy.battery.mqtt_chain2 /Dc/0/Current GetValue && \
-dbus -y com.victronenergy.battery.mqtt_chain2 /Soc GetValue && \
-echo "=== Chain 3 (Virtual) ===" && \
-dbus -y com.victronenergy.battery.virtual_chain /Dc/0/Voltage GetValue && \
-dbus -y com.victronenergy.battery.virtual_chain /Dc/0/Current GetValue && \
-dbus -y com.victronenergy.battery.virtual_chain /Soc GetValue && \
-echo "=== SmartShunt (Total) ===" && \
-dbus -y com.victronenergy.battery.ttyUSB4 /Dc/0/Voltage GetValue && \
-dbus -y com.victronenergy.battery.ttyUSB4 /Dc/0/Current GetValue'
-```
-
-## Uninstall
-
-```bash
-ssh Cerbo 'svc -d /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
-rm -rf /service/dbus-mqtt-chain1 /service/dbus-mqtt-chain2 /service/dbus-virtual-chain
-rm -rf /data/apps/dbus-mqtt-battery
-rm -rf /var/log/dbus-mqtt-chain1 /var/log/dbus-mqtt-chain2 /var/log/dbus-virtual-chain'
-```
-
-## D-Bus Paths (per chain)
-
-| Path | Description |
-|------|-------------|
-| /Dc/0/Voltage | Total battery voltage (V) |
-| /Dc/0/Current | Total battery current (A) |
-| /Dc/0/Power | Total power (W) |
-| /Soc | State of charge (%) |
-| /Capacity | Total capacity (Ah) |
-| /System/MinCellVoltage | Minimum cell voltage (V) |
-| /System/MaxCellVoltage | Maximum cell voltage (V) |
-| /System/NrOfModulesOnline | Online battery count |
-| /Io/AllowToCharge | Charge FET status |
-| /Io/AllowToDischarge | Discharge FET status |
-
-## Troubleshooting
-
-### Package not showing in PackageManager
-
-PackageManager's `AddStoredPackages()` requires both a `version` file AND a `setup` script in `/data/dbus-mqtt-battery/`.
-
-**Check**:
-```bash
-ls -la /data/dbus-mqtt-battery/version /data/dbus-mqtt-battery/setup
-cat /data/dbus-mqtt-battery/gitHubInfo   # should show: victron-venus:latest
-```
-
-**Common issues**:
-- `setup` file missing → PackageManager skips the directory silently
-- `version` file missing or empty → PackageManager skips
-- `gitHubInfo` missing → can't download updates
-
-**Fix**:
-```bash
-# Copy missing files
-scp setup gitHubInfo version root@cerbo:/data/dbus-mqtt-battery/
-ssh root@cerbo "chmod +x /data/dbus-mqtt-battery/setup"
-
-# Restart PackageManager to re-scan
-svc -t /service/PackageManager
-```
-
-**Verify**:
-```bash
-tail -20 /var/log/PackageManager/current | grep dbus-mqtt-battery
-# Should show: checking dbus-mqtt-battery / adding dbus-mqtt-battery
-```
-
-### Chain 2 shows N/A
-ESP32 #2 needs to be flashed and connected to WiFi/MQTT.
-
-### Virtual chain current is wrong
-Verify SmartShunt suffix:
-```bash
-dbus -y | grep battery
-# Example output: com.victronenergy.battery.ttyUSB4
-# The suffix is the part after "battery." (e.g., ttyUSB4)
-```
-If your SmartShunt has a different suffix (e.g., `ttyUSB0`), edit:
-```bash
-vi /service/dbus-virtual-chain/run
-# Change --smartshunt ttyUSB4 to your actual suffix
-svc -t /service/dbus-virtual-chain  # Restart service
-```
-
-### Service keeps restarting
-Run manually to see errors:
-```bash
-svc -d /service/dbus-mqtt-chain1
-cd /data/apps/dbus-mqtt-battery
-python3 dbus-mqtt-battery.py --broker <MQTT_BROKER_IP> --topic-prefix battery --service-suffix mqtt_chain1
-```
+- [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
 
 ## Related Projects
 
@@ -497,13 +228,13 @@ This project is part of the Victron Venus OS integration suite:
 |---------|-------------|
 | [inverter-control](https://github.com/victron-venus/inverter-control) | Advanced ESS external control system with grid-zero targeting |
 | [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) | Real-time web dashboard (Python/FastAPI) via MQTT |
-| [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
+| [inverter-dashboard-go](https://github.com/victron-venues/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
 | [inverter-desktop](https://github.com/victron-venus/inverter-desktop) | Native desktop application (Rust/Tauri) for system monitoring |
 | **dbus-mqtt-battery** (this) | MQTT to D-Bus bridge for JBD BMS battery integration |
 | [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug integration as a PV inverter on D-Bus |
 | [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS batteries |
 | [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) | TIG (Telegraf, InfluxDB, Grafana) monitoring stack |
-| [terraform-github-victron](https://github.com/4alvit/terraform-github-victron) | Infrastructure as Code for the GitHub organization |
+| [terraform-github-victron](https://github.com/victron-venus/terraform-github-victron) | Infrastructure as Code for the GitHub organization |
 
 ## License
 
