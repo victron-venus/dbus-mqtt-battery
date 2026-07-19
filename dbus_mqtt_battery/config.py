@@ -46,6 +46,15 @@ DEFAULT_SERVICE_SUFFIX = "mqtt_chain"
 DEFAULT_PRODUCT_NAME = "JBD Battery Chain"
 DEFAULT_TOPIC_PREFIX = "battery"
 
+# Poll interval (milliseconds)
+POLL_INTERVAL_MS = 2000
+
+# Stale data timeout (seconds before data considered stale)
+STALE_TIMEOUT = 60
+
+# Cells per BMS module
+DVCC_CELLS_PER_BMS = DEFAULT_CELLS_PER_BMS
+
 # Config file search paths
 CONFIG_FILE_LOCATIONS = [
     "/etc/dbus-mqtt-battery.conf",

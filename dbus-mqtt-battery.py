@@ -28,12 +28,8 @@ import sys
 import os
 import argparse
 import logging
-import re
-import signal
-import gc
-from typing import Dict, Any, Optional
-from time import sleep, time
-from threading import Lock
+from time import time, sleep
+from typing import Dict, Any
 
 # Add Victron library path
 sys.path.insert(
@@ -43,29 +39,6 @@ sys.path.insert(
         "/opt/victronenergy/dbus-systemcalc-py/ext/velib_python",
     ),
 )
-
-# Third-party imports
-from dbus.mainloop.glib import DBusGMainLoop
-import dbus
-
-if sys.version_info.major == 2:
-    import gobject
-else:
-    from gi.repository import GLib as gobject
-
-try:
-    import paho.mqtt.client as mqtt
-
-    # Support for paho-mqtt v2.0+
-    try:
-        from paho.mqtt.enums import CallbackAPIVersion
-
-        PAHO_V2 = True
-    except ImportError:
-        PAHO_V2 = False
-except ImportError:
-    print("ERROR: paho-mqtt not installed. Run: pip install paho-mqtt")
-    sys.exit(1)
 
 from vedbus import VeDbusService
 
@@ -78,6 +51,22 @@ from dvcc import (
     DVCC_CELL_MAX_VOLTAGE,
 )
 
+# Import from package (replaces duplicated BatteryData and MqttBatteryClient)
+from dbus_mqtt_battery import (
+    MqttBatteryClient,
+    VERSION,
+    POLL_INTERVAL_MS,
+    DVCC_CELLS_PER_BMS,
+    get_bus,
+    setup_main_loop,
+    register_signal_handlers,
+    create_poll_function,
+    run_main_loop,
+    setup_dbus_paths_common,
+    setup_dbus_paths_dc,
+    setup_dbus_paths_alarms,
+)
+
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("MqttBattery")
@@ -86,11 +75,8 @@ logger = logging.getLogger("MqttBattery")
 # CONFIGURATION
 # =============================================================================
 
-VERSION = "2.6.0"
 DEFAULT_MQTT_BROKER = "localhost"
 DEFAULT_MQTT_PORT = 1883
-POLL_INTERVAL_MS = 2000
-STALE_TIMEOUT = 60  # seconds before data considered stale
 
 # Alarm thresholds (adjust for your battery type)
 ALARM_LOW_SOC = 10  # % - Low state of charge warning
@@ -105,472 +91,13 @@ ALARM_HIGH_TEMP_CRITICAL = 55  # °C - Critical high temperature
 ALARM_LOW_TEMP = 0  # °C - Low temperature warning
 ALARM_LOW_TEMP_CRITICAL = -10  # °C - Critical low temperature
 
-# =============================================================================
-# CELLS PER BMS CONFIGURATION
-# =============================================================================
-
 # Alias for backward compatibility
-CELLS_PER_BMS = DVCC_CELLS_PER_BMS = 4
-
-# =============================================================================
-# BATTERY DATA CONTAINER
-# =============================================================================
-
-
-class BatteryData:
-    """Container for single battery data from MQTT"""
-
-    def __init__(self, battery_id: int):
-        self.battery_id = battery_id
-        self.voltage: float = 0.0
-        self.current: float = 0.0
-        self.power: float = 0.0
-        self.soc: float = 0.0
-        self.capacity_remaining: float = 0.0
-        self.capacity_total: float = 0.0  # Full capacity for time-to-go calc
-        self.cycles: int = 0
-        self.temperature: float = 25.0
-        self.temperatures: Dict[int, float] = {}  # sensor_index -> temperature
-        self.cells: Dict[int, float] = {}  # cell_index -> voltage
-        self.cell_count: int = 4
-        self.charging: bool = True
-        self.discharging: bool = True
-        self.balancing: bool = False
-        self.online: bool = True
-        self.last_update: float = 0.0
-        self.lock = Lock()
-
-    def update(self, key: str, value: Any):
-        """Update a battery parameter"""
-        with self.lock:
-            if key == "voltage":
-                self.voltage = float(value)
-            elif key == "current":
-                self.current = float(value)
-            elif key == "power":
-                self.power = float(value)
-            elif key == "soc":
-                self.soc = float(value)
-            elif key == "capacity_remaining":
-                self.capacity_remaining = float(value)
-            elif key == "capacity_total":
-                self.capacity_total = float(value)
-            elif key == "cycles":
-                self.cycles = int(float(value))
-            elif key == "temperature":
-                self.temperature = float(value)
-                self.temperatures[1] = float(value)
-            elif key.startswith("temperature_"):
-                # temperature_1, temperature_2, etc.
-                try:
-                    temp_idx = int(key.split("_")[1])
-                    temp_val = float(value)
-                    self.temperatures[temp_idx] = temp_val
-                    # Update main temperature as average
-                    valid_temps = [t for t in self.temperatures.values() if t > -40]
-                    if valid_temps:
-                        self.temperature = sum(valid_temps) / len(valid_temps)
-                except (TypeError, ValueError, IndexError):
-                    pass
-            elif key == "charging":
-                self.charging = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "discharging":
-                self.discharging = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "balancing":
-                self.balancing = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "online":
-                self.online = str(value).upper() in ("ON", "TRUE", "1")
-            elif key.startswith("cell_"):
-                # cell_1, cell_2, etc.
-                try:
-                    cell_idx = int(key.split("_")[1])
-                    self.cells[cell_idx] = float(value)
-                    self.cell_count = max(self.cell_count, len(self.cells))
-                except (TypeError, ValueError, IndexError):
-                    pass
-            self.last_update = time()
-
-    def get_min_temperature(self) -> tuple[Optional[float], Optional[int]]:
-        """Returns (min_temp, sensor_id)"""
-        valid = [(idx, t) for idx, t in self.temperatures.items() if t > -40]
-        if not valid:
-            return self.temperature, 1
-        min_temp = min(valid, key=lambda x: x[1])
-        return min_temp[1], min_temp[0]
-
-    def get_max_temperature(self) -> tuple[Optional[float], Optional[int]]:
-        """Returns (max_temp, sensor_id)"""
-        valid = [(idx, t) for idx, t in self.temperatures.items() if t > -40]
-        if not valid:
-            return self.temperature, 1
-        max_temp = max(valid, key=lambda x: x[1])
-        return max_temp[1], max_temp[0]
-
-    def is_valid(self) -> bool:
-        """Check if data is recent enough"""
-        return (time() - self.last_update) < STALE_TIMEOUT and self.voltage > 0
-
-    def get_min_cell_voltage(self) -> tuple[Optional[float], Optional[int]]:
-        """Returns (min_voltage, cell_id)"""
-        valid = [(idx, v) for idx, v in self.cells.items() if v and v > 0]
-        if not valid:
-            return None, None
-        min_cell = min(valid, key=lambda x: x[1])
-        return min_cell[1], min_cell[0]
-
-    def get_max_cell_voltage(self) -> tuple[Optional[float], Optional[int]]:
-        """Returns (max_voltage, cell_id)"""
-        valid = [(idx, v) for idx, v in self.cells.items() if v and v > 0]
-        if not valid:
-            return None, None
-        max_cell = max(valid, key=lambda x: x[1])
-        return max_cell[1], max_cell[0]
-
-
-# =============================================================================
-# MQTT CLIENT
-# =============================================================================
-
-
-class MqttBatteryClient:
-    """MQTT client that receives battery data from ESP32"""
-
-    def __init__(
-        self,
-        broker: str,
-        port: int,
-        battery_count: int = 4,
-        topic_prefix: str = "battery",
-        installed_capacity: float = 280,
-        bms_first: int = 1,
-        cells_per_bms: int = 4,
-    ):
-        self.broker = broker
-        self.port = port
-        self.battery_count = battery_count
-        self.topic_prefix = topic_prefix
-        self.installed_capacity = (
-            installed_capacity  # Fixed capacity for series-connected batteries
-        )
-        # MQTT topic index of first BMS for this chain (chain1: 1, chain2 with 2 BMS: 3 for bms3,bms4)
-        self.bms_first = max(1, bms_first)
-        # Cells per BMS module (fixed, not from MQTT to avoid issues with lost BLE connections)
-        self.cells_per_bms = cells_per_bms
-
-        # Create battery data containers (1-indexed for bms1, bms2, etc.)
-        self.batteries: Dict[int, BatteryData] = {
-            i: BatteryData(i) for i in range(1, battery_count + 1)
-        }
-        self._data_lock = Lock()  # Protect aggregate data access
-
-        # Aggregate totals from ESP32
-        self.total_voltage: float = 0.0
-        self.total_current: float = 0.0
-        self.total_power: float = 0.0
-        self.total_soc: float = 0.0
-        self.total_capacity: float = 0.0
-        self.total_updated: float = 0.0
-        # If ESP publishes voltage_total but never current_total, do not use total_current=0
-        self.current_total_seen: bool = False
-        self.soc_total_seen: bool = False
-
-        # MQTT client (handle both paho-mqtt v1 and v2)
-        client_id = f"dbus-mqtt-battery-{int(time())}"
-        if PAHO_V2:
-            self.client = mqtt.Client(
-                callback_api_version=CallbackAPIVersion.VERSION1, client_id=client_id
-            )
-        else:
-            self.client = mqtt.Client(client_id=client_id)
-        self.client.on_connect = self._on_connect
-        self.client.on_disconnect = self._on_disconnect
-        self.client.on_message = self._on_message
-        self.connected = False
-        self._reconnect_delay = 1  # Exponential backoff starting point
-        self._max_reconnect_delay = 60
-
-    def connect(self):
-        """Connect to MQTT broker with auto-reconnect enabled"""
-        try:
-            logger.info("Connecting to MQTT broker %s:%s", self.broker, self.port)
-            # Enable auto-reconnect with exponential backoff
-            self.client.reconnect_delay_set(min_delay=1, max_delay=self._max_reconnect_delay)
-            self.client.connect(self.broker, self.port, keepalive=60)
-            self.client.loop_start()
-            return True
-        except Exception as e:
-            logger.error("MQTT connection failed: %s", e)
-            return False
-
-    def disconnect(self):
-        """Disconnect from MQTT broker"""
-        self.client.loop_stop()
-        self.client.disconnect()
-
-    def _on_connect(self, client, userdata, flags, rc):
-        """MQTT connection callback"""
-        if rc == 0:
-            logger.info("Connected to MQTT broker")
-            self.connected = True
-            self._reconnect_delay = 1  # Reset backoff on successful connect
-            # Subscribe to all battery topics
-            topic = f"{self.topic_prefix}/#"
-            client.subscribe(topic)
-            logger.info("Subscribed to %s", topic)
-        else:
-            logger.error("MQTT connection failed with code %s", rc)
-
-    def _on_disconnect(self, client, userdata, rc):
-        """MQTT disconnection callback with auto-reconnect"""
-        self.connected = False
-        if rc != 0:
-            logger.warning("MQTT disconnected unexpectedly (rc=%s), will auto-reconnect", rc)
-        else:
-            logger.info("MQTT disconnected cleanly")
-
-    def _on_message(self, client, userdata, msg):
-        """MQTT message callback"""
-        try:
-            topic = msg.topic
-            payload = msg.payload.decode("utf-8").strip()
-
-            # Skip non-numeric payloads (like "ON"/"OFF" we handle separately)
-            # Parse topic: battery/sensor/voltage_bms1/state
-            #           or battery/binary_sensor/charging_bms1/state
-            parts = topic.split("/")
-            if len(parts) < 3:
-                return
-
-            sensor_type = parts[1]  # "sensor" or "binary_sensor"
-            sensor_name = parts[2]  # "voltage_bms1", "voltage_total", etc.
-
-            # Handle totals
-            if sensor_name.endswith("_total"):
-                self._update_total(sensor_name, payload)
-                return
-
-            # Extract battery index from name (e.g., "voltage_bms1" -> bms1 -> 1)
-            match = re.search(r"bms(\d+)$", sensor_name)
-            if not match:
-                return
-
-            bms_idx_mqtt = int(match.group(1))
-            # Map MQTT bms index to internal slot (chain2: bms3,bms4 -> internal 1,2)
-            bms_idx = bms_idx_mqtt - self.bms_first + 1
-            if bms_idx < 1 or bms_idx > self.battery_count:
-                return
-
-            # Extract sensor type (e.g., "voltage_bms1" -> "voltage")
-            sensor_key = re.sub(r"_bms\d+$", "", sensor_name)
-
-            # Map sensor names to battery attributes
-            mapping = {
-                "voltage": "voltage",
-                "current": "current",
-                "power": "power",
-                "soc": "soc",
-                "capacity_remaining": "capacity_remaining",
-                "capacity": "capacity_total",
-                "cycles": "cycles",
-                "charging": "charging",
-                "discharging": "discharging",
-                "balancing": "balancing",
-                "online": "online",
-            }
-
-            # Handle cell voltages: voltage_cell1 -> cell_1
-            if sensor_key.startswith("voltage_cell"):
-                cell_num = sensor_key.replace("voltage_cell", "")
-                self.batteries[bms_idx].update(f"cell_{cell_num}", payload)
-            # Handle temperature sensors: temperature1 -> temperature_1
-            elif sensor_key.startswith("temperature"):
-                temp_num = sensor_key.replace("temperature", "")
-                if temp_num:
-                    self.batteries[bms_idx].update(f"temperature_{temp_num}", payload)
-                else:
-                    self.batteries[bms_idx].update("temperature", payload)
-            elif sensor_key in mapping:
-                self.batteries[bms_idx].update(mapping[sensor_key], payload)
-
-        except Exception as e:
-            logger.debug("Error processing MQTT message: %s", e)
-
-    def _update_total(self, sensor_name: str, value: str):
-        """Update aggregate totals"""
-        try:
-            val = float(value)
-            if sensor_name == "voltage_total":
-                self.total_voltage = val
-            elif sensor_name == "current_total":
-                self.total_current = val
-                self.current_total_seen = True
-            elif sensor_name == "power_total":
-                self.total_power = val
-            elif sensor_name == "soc_total":
-                self.total_soc = val
-                self.soc_total_seen = True
-            elif sensor_name == "capacity_total":
-                self.total_capacity = val
-            self.total_updated = time()
-        except (TypeError, ValueError):
-            pass
-
-    def get_aggregate_data(self) -> Dict[str, Any]:
-        """Get aggregated data from all batteries (thread-safe)"""
-        # Copy battery data under lock to avoid race conditions with MQTT thread
-        with self._data_lock:
-            valid_batts = [b for b in self.batteries.values() if b.is_valid()]
-            if not valid_batts:
-                return None
-            # Copy volatile data from each battery
-            batt_snapshots = []
-            for b in valid_batts:
-                with b.lock:
-                    batt_snapshots.append(
-                        {
-                            "battery_id": b.battery_id,
-                            "voltage": b.voltage,
-                            "current": b.current,
-                            "power": b.power,
-                            "soc": b.soc,
-                            "capacity_remaining": b.capacity_remaining,
-                            "temperature": b.temperature,
-                            "temperatures": dict(b.temperatures),
-                            "cells": dict(b.cells),
-                            "cell_count": b.cell_count,
-                            "charging": b.charging,
-                            "discharging": b.discharging,
-                            "cycles": b.cycles,
-                            "online": b.online,
-                        }
-                    )
-
-        # Process snapshots outside of locks
-        valid_batts = batt_snapshots
-
-        # Collect all cells with global IDs: (global_cell_id, voltage)
-        # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
-        all_cells_with_id = []
-        all_temps_with_id = []
-        cells_per_bms = self.cells_per_bms
-
-        for batt in valid_batts:
-            for cell_idx, voltage in batt["cells"].items():
-                if voltage and voltage > 0:
-                    # Offset global IDs when this chain starts at bms N > 1
-                    chain_cell_base = (self.bms_first - 1) * cells_per_bms
-                    global_id = (
-                        chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
-                    )
-                    all_cells_with_id.append((global_id, voltage))
-            for temp_idx, temp in batt["temperatures"].items():
-                if temp > -40:
-                    global_id = (batt["battery_id"] - 1) * 2 + temp_idx
-                    all_temps_with_id.append((global_id, temp))
-
-        # Find min/max cells
-        min_cell_voltage, min_cell_id = None, None
-        max_cell_voltage, max_cell_id = None, None
-        if all_cells_with_id:
-            min_cell = min(all_cells_with_id, key=lambda x: x[1])
-            max_cell = max(all_cells_with_id, key=lambda x: x[1])
-            min_cell_voltage, min_cell_id = min_cell[1], min_cell[0]
-            max_cell_voltage, max_cell_id = max_cell[1], max_cell[0]
-
-        # Find min/max temperatures
-        min_temp, min_temp_id = None, None
-        max_temp, max_temp_id = None, None
-        if all_temps_with_id:
-            min_t = min(all_temps_with_id, key=lambda x: x[1])
-            max_t = max(all_temps_with_id, key=lambda x: x[1])
-            min_temp, min_temp_id = min_t[1], min_t[0]
-            max_temp, max_temp_id = max_t[1], max_t[0]
-        else:
-            min_temp = sum(b["temperature"] for b in valid_batts) / len(valid_batts)
-            max_temp = min_temp
-            min_temp_id = 1
-            max_temp_id = 1
-
-        # Calculate capacity for SERIES-connected batteries (4S configuration)
-        # In series: voltage adds, capacity stays the same
-        # Use fixed installed capacity from configuration
-        total_capacity_full = self.installed_capacity
-
-        # Remaining capacity = installed × average SoC / 100
-        avg_soc = sum(b["soc"] for b in valid_batts) / len(valid_batts)
-        total_capacity_remaining = total_capacity_full * avg_soc / 100
-
-        # Use ESP32 totals if available, otherwise calculate
-        # Important: many ESPHome configs publish voltage_total but NOT current_total.
-        # In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
-        if (time() - self.total_updated) < STALE_TIMEOUT and self.total_voltage > 0:
-            voltage = self.total_voltage
-            if self.current_total_seen:
-                current = self.total_current
-                power = (
-                    self.total_power
-                    if self.total_power != 0
-                    else self.total_voltage * self.total_current
-                )
-            else:
-                current = sum(b["current"] for b in valid_batts) / len(valid_batts)
-                power = sum(b["power"] for b in valid_batts)
-                if abs(power) < 1.0:
-                    power = voltage * current
-            if self.soc_total_seen and self.total_soc > 0:
-                soc = self.total_soc
-                capacity = (
-                    self.total_capacity if self.total_capacity > 0 else total_capacity_remaining
-                )
-            else:
-                soc = min(b["soc"] for b in valid_batts)
-                capacity = total_capacity_remaining
-        else:
-            voltage = sum(b["voltage"] for b in valid_batts)
-            current = sum(b["current"] for b in valid_batts) / len(valid_batts)
-            power = sum(b["power"] for b in valid_batts)
-            soc = min(b["soc"] for b in valid_batts)
-            capacity = total_capacity_remaining
-
-        return {
-            "voltage": voltage,
-            "current": current,
-            "power": power,
-            "soc": soc,
-            "capacity": capacity,
-            "capacity_full": total_capacity_full,
-            "min_cell": min_cell_voltage,
-            "min_cell_id": min_cell_id,
-            "max_cell": max_cell_voltage,
-            "max_cell_id": max_cell_id,
-            "min_temp": min_temp,
-            "min_temp_id": min_temp_id,
-            "max_temp": max_temp,
-            "max_temp_id": max_temp_id,
-            "temperature": sum(b["temperature"] for b in valid_batts) / len(valid_batts),
-            "cell_count": sum(b["cell_count"] for b in valid_batts),
-            "allow_charge": all(b["charging"] for b in valid_batts),
-            "allow_discharge": all(b["discharging"] for b in valid_batts),
-            "cycles": max(b["cycles"] for b in valid_batts),
-            "modules_online": sum(1 for b in valid_batts if b["online"]),
-            "modules_offline": sum(1 for b in valid_batts if not b["online"]),
-            "modules_blocking_discharge": sum(1 for b in valid_batts if not b["discharging"]),
-            "modules_blocking_charge": sum(1 for b in valid_batts if not b["charging"]),
-            "all_cells": all_cells_with_id,  # List of (global_id, voltage) tuples
-            "temperatures": {
-                b["battery_id"]: b["temperature"] for b in valid_batts
-            },  # BMS ID -> temp
-        }
+CELLS_PER_BMS = DVCC_CELLS_PER_BMS
 
 
 # =============================================================================
 # D-BUS SERVICE
 # =============================================================================
-
-
-def get_bus():
-    """Get the appropriate D-Bus (session or system)."""
-    return dbus.SessionBus() if "DBUS_SESSION_BUS_ADDRESS" in os.environ else dbus.SystemBus()
 
 
 class DbusAggregateService:
@@ -610,40 +137,19 @@ class DbusAggregateService:
     def _setup_paths(self):
         """Setup D-Bus paths for Victron GUI v2 compatibility"""
 
-        # Management paths
-        self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
-        self._dbusservice.add_path("/Mgmt/ProcessVersion", VERSION)
-        self._dbusservice.add_path("/Mgmt/Connection", "MQTT ESP32")
-
-        # Device identification
-        self._dbusservice.add_path("/DeviceInstance", self.device_instance)
-        self._dbusservice.add_path("/ProductId", 0xB034)
-        self._dbusservice.add_path("/ProductName", self.product_name)
-        self._dbusservice.add_path("/CustomName", self.product_name, writeable=True)
-        self._dbusservice.add_path("/FirmwareVersion", VERSION)
-        self._dbusservice.add_path("/HardwareVersion", "ESP32 BLE Proxy")
-        self._dbusservice.add_path("/Connected", 1)
+        # Common paths (management, device identification)
+        setup_dbus_paths_common(
+            self._dbusservice,
+            process_name=__file__,
+            version=VERSION,
+            connection="MQTT ESP32",
+            device_instance=self.device_instance,
+            product_name=self.product_name,
+            hardware_version="ESP32 BLE Proxy",
+        )
 
         # DC measurements
-        self._dbusservice.add_path(
-            "/Dc/0/Voltage",
-            None,
-            writeable=True,
-            gettextcallback=lambda a, x: f"{x:.2f}V" if x else "",
-        )
-        self._dbusservice.add_path(
-            "/Dc/0/Current",
-            None,
-            writeable=True,
-            gettextcallback=lambda a, x: f"{x:.2f}A" if x else "",
-        )
-        self._dbusservice.add_path(
-            "/Dc/0/Power",
-            None,
-            writeable=True,
-            gettextcallback=lambda a, x: f"{x:.0f}W" if x else "",
-        )
-        self._dbusservice.add_path("/Dc/0/Temperature", None, writeable=True)
+        setup_dbus_paths_dc(self._dbusservice, include_formats=True)
 
         # State of charge
         self._dbusservice.add_path("/Soc", None, writeable=True)
@@ -790,22 +296,7 @@ class DbusAggregateService:
         self._dbusservice.add_path("/Io/AllowToBalance", 1, writeable=True)
 
         # Alarms
-        for alarm in [
-            "LowVoltage",
-            "HighVoltage",
-            "LowCellVoltage",
-            "HighCellVoltage",
-            "LowSoc",
-            "HighChargeCurrent",
-            "HighDischargeCurrent",
-            "CellImbalance",
-            "InternalFailure",
-            "HighTemperature",
-            "LowTemperature",
-            "HighChargeTemperature",
-            "LowChargeTemperature",
-        ]:
-            self._dbusservice.add_path(f"/Alarms/{alarm}", 0, writeable=True)
+        setup_dbus_paths_alarms(self._dbusservice)
 
         # Reliability: stale data indicator (0=fresh, 1=stale)
         self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
@@ -1216,21 +707,13 @@ def main():
     logger.info("D-Bus service: com.victronenergy.battery.%s", args.service_suffix)
 
     # Setup D-Bus main loop
-    DBusGMainLoop(set_as_default=True)
-    mainloop = gobject.MainLoop()
+    mainloop = setup_main_loop()
 
     # Variables for cleanup
     mqtt_client = None
 
-    def graceful_shutdown(signum, frame):
-        """Handle shutdown signals gracefully"""
-        sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
-        logger.info("Received %s, shutting down gracefully...", sig_name)
-        mainloop.quit()
-
     # Register signal handlers
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
+    register_signal_handlers(mainloop)
 
     # Create MQTT client
     mqtt_client = MqttBatteryClient(
@@ -1248,6 +731,7 @@ def main():
 
     # Wait for initial data
     logger.info("Waiting for MQTT data...")
+
     sleep(5)
 
     # Create D-Bus service
@@ -1255,53 +739,14 @@ def main():
         mqtt_client, args.instance, args.service_suffix, args.product_name
     )
 
-    # Periodic garbage collection counter
-    gc_counter = 0
-    GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
-
     # Heartbeat file for watchdog
     heartbeat_file = "/run/dbus-mqtt-battery.alive"
 
-    def poll():
-        """Periodic update with memory management"""
-        nonlocal gc_counter
-        try:
-            dbus_service.update()
-        except Exception as e:
-            logger.error("Error in poll: %s", e)
+    # Create poll function with GC and heartbeat
+    poll_fn = create_poll_function(dbus_service, heartbeat_file)
 
-        # Periodic garbage collection for memory-constrained Venus OS
-        gc_counter += 1
-        if gc_counter >= GC_INTERVAL:
-            gc_counter = 0
-            gc.collect()
-
-        # Write heartbeat for watchdog
-        try:
-            with open(heartbeat_file, "w", encoding="utf-8") as f:
-                f.write(str(int(time())))
-        except OSError:
-            pass
-
-        return True
-
-    # Start polling
-    gobject.timeout_add(POLL_INTERVAL_MS, poll)
-
-    logger.info("Service started, entering main loop")
-
-    try:
-        mainloop.run()
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received")
-    except Exception as e:
-        logger.error("Unexpected error in main loop: %s", e)
-    finally:
-        logger.info("Cleaning up...")
-        if mqtt_client:
-            mqtt_client.disconnect()
-        gc.collect()
-        logger.info("Shutdown complete")
+    # Start polling and run main loop
+    run_main_loop(mainloop, POLL_INTERVAL_MS, poll_fn)
 
 
 if __name__ == "__main__":

@@ -30,9 +30,7 @@ import sys
 import os
 import argparse
 import logging
-import signal
-import gc
-from time import sleep, time
+from time import time, sleep
 from typing import Optional, List, Tuple
 
 # Add Victron library path
@@ -44,36 +42,32 @@ sys.path.insert(
     ),
 )
 
-from dbus.mainloop.glib import DBusGMainLoop
 import dbus
-
-if sys.version_info.major == 2:
-    import gobject
-else:
-    from gi.repository import GLib as gobject
 
 from vedbus import VeDbusService
 
-# Version
-VERSION = "1.2.0"
+# Import shared utilities from package
+from dbus_mqtt_battery import (
+    VERSION,
+    POLL_INTERVAL_MS,
+    get_bus,
+    setup_main_loop,
+    register_signal_handlers,
+    create_poll_function,
+    run_main_loop,
+    setup_dbus_paths_common,
+    setup_dbus_paths_dc,
+)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-# Poll interval
-POLL_INTERVAL_MS = 2000
 
 # Data timeout (seconds) - if no update for this long, consider source offline
 DATA_TIMEOUT = 30.0
 
 # Default battery capacity per chain (Ah) - used for SoC calculation
 DEFAULT_CHAIN_CAPACITY = 280.0  # 4x 70Ah batteries in series
-
-
-def get_bus():
-    """Get the appropriate D-Bus (session or system)."""
-    return dbus.SessionBus() if "DBUS_SESSION_BUS_ADDRESS" in os.environ else dbus.SystemBus()
 
 
 class SourceStatus:
@@ -184,7 +178,7 @@ class DbusReader:
         try:
             self.bus.get_object(service, "/")
             return True
-        except:
+        except dbus.exceptions.DBusException:
             return False
 
 
@@ -232,25 +226,20 @@ class VirtualBatteryService:
     def _setup_paths(self):
         """Setup D-Bus paths for Victron GUI v2 compatibility"""
 
-        # Management paths
-        self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
-        self._dbusservice.add_path("/Mgmt/ProcessVersion", VERSION)
-        self._dbusservice.add_path("/Mgmt/Connection", "Virtual (Calculated)")
+        # Common paths (management, device identification)
+        setup_dbus_paths_common(
+            self._dbusservice,
+            process_name=__file__,
+            version=VERSION,
+            connection="Virtual (Calculated)",
+            device_instance=self.device_instance,
+            product_name=self.product_name,
+            hardware_version="Virtual BMS",
+            product_id=0xB035,
+        )
 
-        # Device identification
-        self._dbusservice.add_path("/DeviceInstance", self.device_instance)
-        self._dbusservice.add_path("/ProductId", 0xB035)
-        self._dbusservice.add_path("/ProductName", self.product_name)
-        self._dbusservice.add_path("/CustomName", self.product_name, writeable=True)
-        self._dbusservice.add_path("/FirmwareVersion", VERSION)
-        self._dbusservice.add_path("/HardwareVersion", "Virtual BMS")
-        self._dbusservice.add_path("/Connected", 1)
-
-        # Main battery data
-        self._dbusservice.add_path("/Dc/0/Voltage", None)
-        self._dbusservice.add_path("/Dc/0/Current", None)
-        self._dbusservice.add_path("/Dc/0/Power", None)
-        self._dbusservice.add_path("/Dc/0/Temperature", None)
+        # DC measurements (without formatting for simplicity)
+        setup_dbus_paths_dc(self._dbusservice, include_formats=False)
 
         # Capacity and state
         self._dbusservice.add_path("/Soc", None)
@@ -547,21 +536,14 @@ def main():
     logger.info("Chain capacity: %s Ah", args.capacity)
 
     # Setup D-Bus main loop
-    DBusGMainLoop(set_as_default=True)
-    mainloop = gobject.MainLoop()
-
-    def graceful_shutdown(signum, frame):
-        """Handle shutdown signals gracefully"""
-        sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
-        logger.info("Received %s, shutting down gracefully...", sig_name)
-        mainloop.quit()
+    mainloop = setup_main_loop()
 
     # Register signal handlers
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
+    register_signal_handlers(mainloop)
 
     # Wait for services to be available
     logger.info("Waiting for D-Bus services...")
+
     sleep(5)
 
     # Create virtual battery service
@@ -573,40 +555,11 @@ def main():
         chain_capacity=args.capacity,
     )
 
-    # Periodic garbage collection counter
-    gc_counter = 0
-    GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
+    # Create poll function with GC
+    poll_fn = create_poll_function(service)
 
-    def poll():
-        """Periodic update with memory management"""
-        nonlocal gc_counter
-        try:
-            service.update()
-        except Exception as e:
-            logger.error("Error in poll: %s", e)
-
-        # Periodic garbage collection for memory-constrained Venus OS
-        gc_counter += 1
-        if gc_counter >= GC_INTERVAL:
-            gc_counter = 0
-            gc.collect()
-
-        return True
-
-    # Start polling
-    gobject.timeout_add(POLL_INTERVAL_MS, poll)
-
-    logger.info("Service started, entering main loop")
-
-    try:
-        mainloop.run()
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received")
-    except Exception as e:
-        logger.error("Unexpected error in main loop: %s", e)
-    finally:
-        gc.collect()
-        logger.info("Shutdown complete")
+    # Start polling and run main loop
+    run_main_loop(mainloop, POLL_INTERVAL_MS, poll_fn)
 
 
 if __name__ == "__main__":
