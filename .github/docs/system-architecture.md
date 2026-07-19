@@ -65,7 +65,7 @@ flowchart TB
 ### Package Not Showing in PackageManager
 
 **Actions:**
-\`\`\`bash
+```bash
 # Verify version file
 cat /data/dbus-mqtt-battery/version
 
