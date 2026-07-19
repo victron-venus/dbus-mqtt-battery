@@ -8,6 +8,7 @@ repos:
   hooks:
   - id: shellcheck
     args: [--exclude=SC2154, --exclude=SC2164, --exclude=SC2181, --exclude=SC2029, --exclude=SC1091, --exclude=SC2034, --exclude=SC2086, --exclude=SC2015]
+    files: ^(?!.venv/)
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.4.0
   hooks:
