@@ -74,12 +74,12 @@ ls -la /data/dbus-mqtt-battery/setup
 
 # Restart PackageManager
 svc -t /service/PackageManager
-\`\`\`
+```
 
 ### Chain Shows N/A
 
 **Actions:**
-\`\`\`bash
+```bash
 # Check ESP32 is publishing
 mosquitto_sub -v -t 'battery/#' -C 5
 
@@ -88,7 +88,7 @@ svstat /service/dbus-mqtt-chain1
 
 # Verify D-Bus service
 dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue
-\`\`\`
+```
 
 ---
 
