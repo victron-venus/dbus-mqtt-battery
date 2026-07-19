@@ -216,10 +216,6 @@ This downloads the latest version from GitHub and runs `setup install`.
 
 - [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
 
-## Documentation
-
-- [System Architecture](./.github/docs/system-architecture.md) - Data flow diagrams, runbook
-
 ## Related Projects
 
 This project is part of the Victron Venus OS integration suite:
