@@ -8,11 +8,7 @@ from __future__ import annotations
 
 from threading import Lock
 from time import time
-from typing import TYPE_CHECKING, Any, Dict, Optional
-
-if TYPE_CHECKING:
-    # Avoid circular import - only use type hints here
-    pass
+from typing import Any
 
 # Stale data timeout (seconds)
 STALE_TIMEOUT = 60
@@ -52,8 +48,8 @@ class BatteryData:
         self.capacity_total: float = 0.0
         self.cycles: int = 0
         self.temperature: float = 25.0
-        self.temperatures: Dict[int, float] = {}  # sensor_index -> temperature
-        self.cells: Dict[int, float] = {}  # cell_index -> voltage
+        self.temperatures: dict[int, float] = {}  # sensor_index -> temperature
+        self.cells: dict[int, float] = {}  # cell_index -> voltage
         self.cell_count: int = 4
         self.charging: bool = True
         self.discharging: bool = True
@@ -132,7 +128,7 @@ class BatteryData:
         """Check if data is recent enough."""
         return (time() - self.last_update) < STALE_TIMEOUT and self.voltage > 0
 
-    def get_min_cell_voltage(self) -> tuple[Optional[float], Optional[int]]:
+    def get_min_cell_voltage(self) -> tuple[float | None, int | None]:
         """Returns (min_voltage, cell_id)."""
         valid = [(idx, v) for idx, v in self.cells.items() if v and v > 0]
         if not valid:
@@ -140,7 +136,7 @@ class BatteryData:
         min_cell = min(valid, key=lambda x: x[1])
         return min_cell[1], min_cell[0]
 
-    def get_max_cell_voltage(self) -> tuple[Optional[float], Optional[int]]:
+    def get_max_cell_voltage(self) -> tuple[float | None, int | None]:
         """Returns (max_voltage, cell_id)."""
         valid = [(idx, v) for idx, v in self.cells.items() if v and v > 0]
         if not valid:

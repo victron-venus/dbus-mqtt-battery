@@ -26,12 +26,13 @@ Usage:
     ./dbus-virtual-battery.py --smartshunt ttyUSB4 --chains mqtt_chain1 mqtt_chain2
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import argparse
 import logging
 from time import time, sleep
-from typing import Optional, List, Tuple
 
 # Add Victron library path
 sys.path.insert(
@@ -78,10 +79,10 @@ class SourceStatus:
         self.service = service
         self.online = False
         self.last_seen = 0.0
-        self.voltage: Optional[float] = None
-        self.current: Optional[float] = None
-        self.soc: Optional[float] = None
-        self.power: Optional[float] = None
+        self.voltage: float | None = None
+        self.current: float | None = None
+        self.soc: float | None = None
+        self.power: float | None = None
 
 
 class DbusReader:
@@ -119,7 +120,7 @@ class DbusReader:
         self._last_reconnect_attempt = now
         return self._connect()
 
-    def get_value(self, service: str, path: str) -> Optional[float]:
+    def get_value(self, service: str, path: str) -> float | None:
         """Get a value from D-Bus service"""
         if not self._ensure_connected():
             return None
@@ -188,7 +189,7 @@ class VirtualBatteryService:
     def __init__(
         self,
         smartshunt_suffix: str,
-        chain_suffixes: List[str],
+        chain_suffixes: list[str],
         device_instance: int = 514,
         product_name: str = "Virtual Battery Chain",
         chain_capacity: float = DEFAULT_CHAIN_CAPACITY,
@@ -203,7 +204,7 @@ class VirtualBatteryService:
         self.smartshunt = SourceStatus(
             "SmartShunt", f"com.victronenergy.battery.{smartshunt_suffix}"
         )
-        self.chains: List[SourceStatus] = []
+        self.chains: list[SourceStatus] = []
         for i, suffix in enumerate(chain_suffixes):
             self.chains.append(SourceStatus(f"Chain{i + 1}", f"com.victronenergy.battery.{suffix}"))
 
@@ -318,7 +319,7 @@ class VirtualBatteryService:
             logger.warning("%s went offline (no data for %ss)", source.name, DATA_TIMEOUT)
         return False
 
-    def _get_status_string(self) -> Tuple[str, str, bool]:
+    def _get_status_string(self) -> tuple[str, str, bool]:
         """Get status string showing online/offline sources.
         Returns: (status_string, missing_sources, all_online)
         """
