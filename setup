@@ -7,8 +7,6 @@
 source "/data/SetupHelper/HelperResources/IncludeHelpers"
 #### end of lines to include helper resources
 
-packageName="dbus-mqtt-battery"
-
 # Default configuration
 defaultChains="2"
 defaultBatteries="4"
