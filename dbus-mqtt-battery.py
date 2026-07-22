@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 dbus-mqtt-battery - MQTT to D-Bus Bridge for JBD BMS via ESP32
-==============================================================
+=============================================================
 
 Receives battery data from ESP32 (ESPHome) via MQTT and publishes to Victron D-Bus.
 Fully compatible with Victron GUI v2.
@@ -24,12 +24,15 @@ Usage:
     ./dbus-mqtt-battery.py --broker 192.168.160.150 --batteries 4
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import argparse
 import logging
 from time import time, sleep
-from typing import Dict, Any
+from typing import Any
+
 
 # Add Victron library path
 sys.path.insert(
@@ -431,7 +434,7 @@ class DbusAggregateService:
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
 
-    def _update_alarms(self, data: Dict[str, Any]):
+    def _update_alarms(self, data: dict[str, Any]):
         """Update alarm states based on battery data.
 
         Alarm values: 0 = OK, 1 = Warning, 2 = Alarm/Critical
@@ -544,7 +547,6 @@ class DbusAggregateService:
         # Low/High voltage (aggregate)
         voltage = data.get("voltage", 0)
         cell_count = data.get("cell_count", 16)
-        cell_count = 16
         expected_nominal = cell_count * 3.2  # LiFePO4 nominal
         expected_min = cell_count * 2.8
         expected_max = cell_count * 3.65
@@ -564,7 +566,7 @@ class DbusAggregateService:
             else:
                 self._dbusservice["/Alarms/HighVoltage"] = 0
 
-    def _update_dvcc(self, data: Dict[str, Any]):
+    def _update_dvcc(self, data: dict[str, Any]):
         """
         Update DVCC (Dynamic Voltage and Current Control) values.
 
