@@ -11,14 +11,11 @@ import logging
 import re
 from threading import Lock
 from time import time
-from typing import Any, Dict, Optional
+from typing import Any
 
-from .bms_data import BatteryData
+from .bms_data import BatteryData, STALE_TIMEOUT
 
 logger = logging.getLogger("MqttBattery")
-
-# Stale data timeout (seconds before data considered stale)
-STALE_TIMEOUT = 60
 
 # Supported paho-mqtt versions
 try:
@@ -57,7 +54,7 @@ class MqttBatteryClient:
         self.cells_per_bms = cells_per_bms
 
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
-        self.batteries: Dict[int, BatteryData] = {
+        self.batteries: dict[int, BatteryData] = {
             i: BatteryData(i) for i in range(1, battery_count + 1)
         }
         self._data_lock = Lock()
@@ -209,7 +206,7 @@ class MqttBatteryClient:
         except (TypeError, ValueError):
             pass
 
-    def get_aggregate_data(self) -> Optional[Dict[str, Any]]:
+    def get_aggregate_data(self) -> dict[str, Any] | None:
         """Get aggregated data from all batteries (thread-safe)."""
         # Copy battery data under lock to avoid race conditions with MQTT thread
         with self._data_lock:
@@ -263,10 +260,10 @@ class MqttBatteryClient:
                     all_temps_with_id.append((global_id, temp))
 
         # Find min/max cells
-        min_cell_voltage: Optional[float] = None
-        min_cell_id: Optional[int] = None
-        max_cell_voltage: Optional[float] = None
-        max_cell_id: Optional[int] = None
+        min_cell_voltage: float | None = None
+        min_cell_id: int | None = None
+        max_cell_voltage: float | None = None
+        max_cell_id: int | None = None
         if all_cells_with_id:
             min_cell = min(all_cells_with_id, key=lambda x: x[1])
             max_cell = max(all_cells_with_id, key=lambda x: x[1])
