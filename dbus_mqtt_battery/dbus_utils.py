@@ -134,8 +134,8 @@ def run_main_loop(
         mainloop.run()
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt received")
-    except Exception as e:
-        logger.error("Unexpected error in main loop: %s", e)
+    except Exception:
+        logger.exception("Unexpected error in main loop")
     finally:
         gc.collect()
         logger.info("Shutdown complete")

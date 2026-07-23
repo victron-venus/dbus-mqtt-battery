@@ -584,7 +584,8 @@ class DbusAggregateService:
         dcl = dvcc["dcl"]
         cvl = dvcc["cvl"]
         ccl_reason = dvcc["ccl_reason"]
-        dcl_reason = dvcc["dcl_reason"]
+        # dcl_reason is intentionally not used
+        _ = dvcc["dcl_reason"]  # noqa: F841
         max_cell = dvcc.get("max_cell_voltage")
         max_cell_id = dvcc.get("max_cell_id")
         min_cell = dvcc.get("min_cell_voltage")
@@ -728,7 +729,7 @@ def main():
         args.cells_per_bms,
     )
     if not mqtt_client.connect():
-        logger.error("Failed to connect to MQTT broker")
+        logger.warning("Failed to connect to MQTT broker")
         sys.exit(1)
 
     # Wait for initial data

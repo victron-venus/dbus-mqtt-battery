@@ -70,6 +70,11 @@ DATA_TIMEOUT = 30.0
 # Default battery capacity per chain (Ah) - used for SoC calculation
 DEFAULT_CHAIN_CAPACITY = 280.0  # 4x 70Ah batteries in series
 
+# D-Bus path constants for DC measurements (duplicated in _read_source)
+DC_VOLTAGE_PATH = "/Dc/0/Voltage"
+DC_CURRENT_PATH = "/Dc/0/Current"
+DC_POWER_PATH = "/Dc/0/Power"
+
 
 class SourceStatus:
     """Track status of a data source"""
@@ -297,10 +302,10 @@ class VirtualBatteryService:
 
     def _read_source(self, source: SourceStatus) -> bool:
         """Read data from a source and update its status. Returns True if data is valid."""
-        voltage = self.dbus_reader.get_value(source.service, "/Dc/0/Voltage")
-        current = self.dbus_reader.get_value(source.service, "/Dc/0/Current")
+        voltage = self.dbus_reader.get_value(source.service, DC_VOLTAGE_PATH)
+        current = self.dbus_reader.get_value(source.service, DC_CURRENT_PATH)
         soc = self.dbus_reader.get_value(source.service, "/Soc")
-        power = self.dbus_reader.get_value(source.service, "/Dc/0/Power")
+        power = self.dbus_reader.get_value(source.service, DC_POWER_PATH)
 
         now = time()
 

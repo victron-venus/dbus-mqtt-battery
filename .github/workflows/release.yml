@@ -59,11 +59,17 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Get version from tag
+      - name: Set up version
         id: get_version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            TAG="${{ inputs.tag }}"
+            # Validate tag format to prevent injection
+            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Invalid tag format. Must match vX.Y.Z (e.g., v1.0.0)" >&2
+              exit 1
+            fi
+            echo "VERSION=$TAG" >> "$GITHUB_OUTPUT"
           else
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
