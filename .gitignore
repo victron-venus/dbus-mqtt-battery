@@ -2,6 +2,5 @@ commit.txt
 release.txt
 __pycache__/
 logs
-a
 __pycache__/
 *.pyc
