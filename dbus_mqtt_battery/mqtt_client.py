@@ -110,7 +110,7 @@ class MqttBatteryClient:
             client.subscribe(topic)
             logger.info("Subscribed to %s", topic)
         else:
-            logger.error("MQTT connection failed with code %s", rc)
+            logger.exception("MQTT connection failed with code %s", rc)
 
     def _on_disconnect(self, client: Any, userdata: Any, rc: int) -> None:
         """MQTT disconnection callback with auto-reconnect."""
@@ -274,8 +274,8 @@ class MqttBatteryClient:
         # Find min/max temperatures
         min_temp_id: int = 1
         max_temp_id: int = 1
-        min_temp: float = 25.0
-        max_temp: float = 25.0
+        min_temp: float
+        max_temp: float
         if all_temps_with_id:
             min_t = min(all_temps_with_id, key=lambda x: x[1])
             max_t = max(all_temps_with_id, key=lambda x: x[1])

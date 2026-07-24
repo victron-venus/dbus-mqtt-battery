@@ -109,7 +109,7 @@ class DbusReader:
             logger.debug("D-Bus connection established")
             return True
         except Exception as e:
-            logger.error("D-Bus connection failed: %s", e)
+            logger.exception("D-Bus connection failed: %s", e)
             self.bus = None
             return False
 
@@ -396,9 +396,9 @@ class VirtualBatteryService:
         if not self.smartshunt.online:
             logger.debug("SmartShunt offline - cannot calculate virtual battery")
             self._dbusservice["/Connected"] = 0
-            self._dbusservice["/Dc/0/Voltage"] = None
-            self._dbusservice["/Dc/0/Current"] = None
-            self._dbusservice["/Dc/0/Power"] = None
+            self._dbusservice[DC_VOLTAGE_PATH] = None
+            self._dbusservice[DC_CURRENT_PATH] = None
+            self._dbusservice[DC_POWER_PATH] = None
             self._dbusservice["/Soc"] = None
             return
 
@@ -456,9 +456,9 @@ class VirtualBatteryService:
         self.last_update = now
 
         # Update D-Bus paths
-        self._dbusservice["/Dc/0/Voltage"] = round(virtual_voltage, 2)
-        self._dbusservice["/Dc/0/Current"] = round(virtual_current, 2)
-        self._dbusservice["/Dc/0/Power"] = round(virtual_power, 1)
+        self._dbusservice[DC_VOLTAGE_PATH] = round(virtual_voltage, 2)
+        self._dbusservice[DC_CURRENT_PATH] = round(virtual_current, 2)
+        self._dbusservice[DC_POWER_PATH] = round(virtual_power, 1)
         self._dbusservice["/Soc"] = round(virtual_soc, 1)
         self._dbusservice["/Capacity"] = round(remaining_capacity, 1)
         self._dbusservice["/ConsumedAmphours"] = round(self.consumed_ah, 1)

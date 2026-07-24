@@ -93,7 +93,7 @@ def create_poll_function(
         try:
             service.update()
         except Exception as e:
-            logger.error("Error in poll: %s", e)
+            logger.exception("Error in poll: %s", e)
 
         # Periodic garbage collection for memory-constrained Venus OS
         gc_counter += 1

@@ -61,9 +61,11 @@ jobs:
 
       - name: Set up version
         id: get_version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ inputs.tag }}"
+            TAG="$INPUT_TAG"
             # Validate tag format to prevent injection
             if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
               echo "Error: Invalid tag format. Must match vX.Y.Z (e.g., v1.0.0)" >&2
