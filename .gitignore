@@ -1,6 +1,5 @@
 commit.txt
 release.txt
-__pycache__/
 logs
 __pycache__/
 *.pyc

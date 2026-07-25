@@ -26,10 +26,10 @@ jobs:
           python-version: '3.11'
 
       - name: Install linters
-        run: pip install ruff
+        run: pip install --only-binary :all: ruff==0.14.10
 
       - name: Ruff lint
-        run: ruff check --select=E,F,W --ignore=E501,E722,E731,F401,F541,F841,W291,W293 *.py
+        run: ruff check --select=E,F,W --ignore=E501,E722,E731,F401,F541,F841,W291,W293 -- ./*.py
 
       - name: Syntax check
-        run: python -m py_compile *.py
+        run: python -m py_compile -- ./*.py
