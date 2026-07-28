@@ -58,6 +58,9 @@ from dbus_mqtt_battery import (
     run_main_loop,
     setup_dbus_paths_common,
     setup_dbus_paths_dc,
+    PATH_DC_VOLTAGE,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
 )
 
 # Logging setup
@@ -103,8 +106,8 @@ class DbusReader:
             self.bus = get_bus()
             logger.debug("D-Bus connection established")
             return True
-        except Exception as e:
-            logger.error("D-Bus connection failed: %s", e)
+        except Exception:
+            logger.exception("D-Bus connection failed")
             self.bus = None
             return False
 
@@ -297,10 +300,10 @@ class VirtualBatteryService:
 
     def _read_source(self, source: SourceStatus) -> bool:
         """Read data from a source and update its status. Returns True if data is valid."""
-        voltage = self.dbus_reader.get_value(source.service, "/Dc/0/Voltage")
-        current = self.dbus_reader.get_value(source.service, "/Dc/0/Current")
+        voltage = self.dbus_reader.get_value(source.service, PATH_DC_VOLTAGE)
+        current = self.dbus_reader.get_value(source.service, PATH_DC_CURRENT)
         soc = self.dbus_reader.get_value(source.service, "/Soc")
-        power = self.dbus_reader.get_value(source.service, "/Dc/0/Power")
+        power = self.dbus_reader.get_value(source.service, PATH_DC_POWER)
 
         now = time()
 
@@ -391,9 +394,9 @@ class VirtualBatteryService:
         if not self.smartshunt.online:
             logger.debug("SmartShunt offline - cannot calculate virtual battery")
             self._dbusservice["/Connected"] = 0
-            self._dbusservice["/Dc/0/Voltage"] = None
-            self._dbusservice["/Dc/0/Current"] = None
-            self._dbusservice["/Dc/0/Power"] = None
+            self._dbusservice[PATH_DC_VOLTAGE] = None
+            self._dbusservice[PATH_DC_CURRENT] = None
+            self._dbusservice[PATH_DC_POWER] = None
             self._dbusservice["/Soc"] = None
             return
 
@@ -451,9 +454,9 @@ class VirtualBatteryService:
         self.last_update = now
 
         # Update D-Bus paths
-        self._dbusservice["/Dc/0/Voltage"] = round(virtual_voltage, 2)
-        self._dbusservice["/Dc/0/Current"] = round(virtual_current, 2)
-        self._dbusservice["/Dc/0/Power"] = round(virtual_power, 1)
+        self._dbusservice[PATH_DC_VOLTAGE] = round(virtual_voltage, 2)
+        self._dbusservice[PATH_DC_CURRENT] = round(virtual_current, 2)
+        self._dbusservice[PATH_DC_POWER] = round(virtual_power, 1)
         self._dbusservice["/Soc"] = round(virtual_soc, 1)
         self._dbusservice["/Capacity"] = round(remaining_capacity, 1)
         self._dbusservice["/ConsumedAmphours"] = round(self.consumed_ah, 1)

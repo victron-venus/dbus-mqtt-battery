@@ -92,8 +92,8 @@ class MqttBatteryClient:
             self.client.connect(self.broker, self.port, keepalive=60)
             self.client.loop_start()
             return True
-        except Exception as e:
-            logger.error("MQTT connection failed: %s", e)
+        except Exception:
+            logger.exception("MQTT connection failed")
             return False
 
     def disconnect(self) -> None:
@@ -132,7 +132,6 @@ class MqttBatteryClient:
             if len(parts) < 3:
                 return
 
-            sensor_type = parts[1]  # "sensor" or "binary_sensor"
             sensor_name = parts[2]  # "voltage_bms1", "voltage_total", etc."
 
             # Handle totals
@@ -271,8 +270,6 @@ class MqttBatteryClient:
             max_cell_voltage, max_cell_id = max_cell[1], max_cell[0]
 
         # Find min/max temperatures
-        min_temp: float = 25.0
-        max_temp: float = 25.0
         min_temp_id: int = 1
         max_temp_id: int = 1
         if all_temps_with_id:

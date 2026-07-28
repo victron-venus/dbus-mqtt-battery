@@ -26,6 +26,11 @@ from dbus.mainloop.glib import DBusGMainLoop
 
 logger = logging.getLogger("MqttBattery")
 
+# D-Bus DC measurement paths
+PATH_DC_VOLTAGE = "/Dc/0/Voltage"
+PATH_DC_CURRENT = "/Dc/0/Current"
+PATH_DC_POWER = "/Dc/0/Power"
+
 
 def get_bus() -> dbus.Bus:
     """Get the appropriate D-Bus (session or system)."""
@@ -192,27 +197,27 @@ def setup_dbus_paths_dc(
     """
     if include_formats:
         dbusservice.add_path(
-            "/Dc/0/Voltage",
+            PATH_DC_VOLTAGE,
             None,
             writeable=True,
             gettextcallback=lambda a, x: f"{x:.2f}V" if x else "",
         )
         dbusservice.add_path(
-            "/Dc/0/Current",
+            PATH_DC_CURRENT,
             None,
             writeable=True,
             gettextcallback=lambda a, x: f"{x:.2f}A" if x else "",
         )
         dbusservice.add_path(
-            "/Dc/0/Power",
+            PATH_DC_POWER,
             None,
             writeable=True,
             gettextcallback=lambda a, x: f"{x:.0f}W" if x else "",
         )
     else:
-        dbusservice.add_path("/Dc/0/Voltage", None)
-        dbusservice.add_path("/Dc/0/Current", None)
-        dbusservice.add_path("/Dc/0/Power", None)
+        dbusservice.add_path(PATH_DC_VOLTAGE, None)
+        dbusservice.add_path(PATH_DC_CURRENT, None)
+        dbusservice.add_path(PATH_DC_POWER, None)
     dbusservice.add_path("/Dc/0/Temperature", None, writeable=True)
 
 

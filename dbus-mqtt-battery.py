@@ -68,6 +68,9 @@ from dbus_mqtt_battery import (
     setup_dbus_paths_common,
     setup_dbus_paths_dc,
     setup_dbus_paths_alarms,
+    PATH_DC_VOLTAGE,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
 )
 
 # Logging setup
@@ -314,9 +317,9 @@ class DbusAggregateService:
         self._dbusservice["/Connected"] = 1
 
         # DC measurements
-        self._dbusservice["/Dc/0/Voltage"] = round(data["voltage"], 2)
-        self._dbusservice["/Dc/0/Current"] = round(data["current"], 2)
-        self._dbusservice["/Dc/0/Power"] = round(data["power"], 0)
+        self._dbusservice[PATH_DC_VOLTAGE] = round(data["voltage"], 2)
+        self._dbusservice[PATH_DC_CURRENT] = round(data["current"], 2)
+        self._dbusservice[PATH_DC_POWER] = round(data["power"], 0)
         self._dbusservice["/Dc/0/Temperature"] = round(data["temperature"], 1)
 
         # State of charge
@@ -584,7 +587,6 @@ class DbusAggregateService:
         dcl = dvcc["dcl"]
         cvl = dvcc["cvl"]
         ccl_reason = dvcc["ccl_reason"]
-        dcl_reason = dvcc["dcl_reason"]
         max_cell = dvcc.get("max_cell_voltage")
         max_cell_id = dvcc.get("max_cell_id")
         min_cell = dvcc.get("min_cell_voltage")
