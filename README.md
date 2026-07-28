@@ -34,6 +34,12 @@ This repository provides automated build archives for Victron Venus OS installat
 
 ---
 
+## Completed Features
+
+- ✅ **CI/CD Releases & Nightly Builds**: Venus OS installer tarball packaging configured for automated releases
+
+---
+
 ## System Architecture
 
 ```mermaid
