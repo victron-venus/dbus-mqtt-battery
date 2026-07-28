@@ -11,7 +11,8 @@ Extractable module for calculating charge/discharge limits based on:
 This module has NO D-Bus or MQTT dependencies - pure Python for easy testing.
 """
 
-from typing import Dict, Optional, Tuple
+from __future__ import annotations
+
 from time import time
 
 # =============================================================================
@@ -88,9 +89,7 @@ class DvccController:
         self.ccl_change_rate = 10.0  # Max A/s change for CCL (smoothing)
         self.last_update_time = time()
 
-    def calculate_ccl_from_cell_voltage(
-        self, max_cell_voltage: Optional[float]
-    ) -> Tuple[float, str]:
+    def calculate_ccl_from_cell_voltage(self, max_cell_voltage: float | None) -> tuple[float, str]:
         """
         Calculate CCL based on highest cell voltage.
         Returns (current_limit, reason_string).
@@ -140,7 +139,7 @@ class DvccController:
         # Between FULL_CURRENT and START_LIMIT - full current
         return max_cc, "normal"
 
-    def calculate_ccl_from_imbalance(self, cell_delta: Optional[float]) -> Tuple[float, str]:
+    def calculate_ccl_from_imbalance(self, cell_delta: float | None) -> tuple[float, str]:
         """
         Calculate CCL reduction based on cell voltage imbalance.
         Returns (current_limit, reason_string).
@@ -178,8 +177,8 @@ class DvccController:
         return ccl, f"slight_imbalance_{cell_delta:.3f}V"
 
     def calculate_ccl_from_temperature(
-        self, min_temp: Optional[float], max_temp: Optional[float]
-    ) -> Tuple[float, str]:
+        self, min_temp: float | None, max_temp: float | None
+    ) -> tuple[float, str]:
         """
         Calculate CCL based on temperature limits.
         Returns (current_limit, reason_string).
@@ -220,7 +219,7 @@ class DvccController:
 
         return max_cc, "temp_ok"
 
-    def calculate_ccl_from_soc(self, soc: Optional[float]) -> Tuple[float, str]:
+    def calculate_ccl_from_soc(self, soc: float | None) -> tuple[float, str]:
         """
         Calculate CCL based on SoC (optional battery longevity feature).
         Reduces current at high SoC to extend battery life.
@@ -239,9 +238,7 @@ class DvccController:
         )
         return max_cc * factor, f"soc_{soc:.0f}"
 
-    def calculate_dcl_from_cell_voltage(
-        self, min_cell_voltage: Optional[float]
-    ) -> Tuple[float, str]:
+    def calculate_dcl_from_cell_voltage(self, min_cell_voltage: float | None) -> tuple[float, str]:
         """
         Calculate DCL based on lowest cell voltage.
         Returns (current_limit, reason_string).
@@ -273,7 +270,7 @@ class DvccController:
         dcl = max_dc * (0.5 + 0.5 * factor)
         return dcl, f"reducing_{v:.3f}V"
 
-    def calculate(self, data: Dict) -> Dict:
+    def calculate(self, data: dict) -> dict:
         """
         Calculate all DVCC parameters based on battery data.
 

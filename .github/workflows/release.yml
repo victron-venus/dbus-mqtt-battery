@@ -11,14 +11,14 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  packages: write
+permissions: {}
 
 jobs:
   build:
     name: Build binaries
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         include:
@@ -50,7 +50,7 @@ jobs:
           egress-policy: audit
 
       - name: Checkout code
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
@@ -59,11 +59,19 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Get version from tag
+      - name: Set up version
         id: get_version
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            TAG="$INPUT_TAG"
+            # Validate tag format to prevent injection
+            if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Error: Invalid tag format. Must match vX.Y.Z (e.g., v1.0.0)" >&2
+              exit 1
+            fi
+            echo "VERSION=$TAG" >> "$GITHUB_OUTPUT"
           else
             echo "VERSION=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
           fi
@@ -93,6 +101,8 @@ jobs:
     name: Attach binaries to release
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Harden the runner (Audit all outbound calls)

@@ -26,14 +26,13 @@ Usage:
     ./dbus-virtual-battery.py --smartshunt ttyUSB4 --chains mqtt_chain1 mqtt_chain2
 """
 
+from __future__ import annotations
+
 import sys
 import os
 import argparse
 import logging
-import signal
-import gc
-from time import sleep, time
-from typing import Optional, List, Tuple
+from time import time, sleep
 
 # Add Victron library path
 sys.path.insert(
@@ -44,25 +43,26 @@ sys.path.insert(
     ),
 )
 
-from dbus.mainloop.glib import DBusGMainLoop
 import dbus
-
-if sys.version_info.major == 2:
-    import gobject
-else:
-    from gi.repository import GLib as gobject
 
 from vedbus import VeDbusService
 
-# Version
-VERSION = "1.2.0"
+# Import shared utilities from package
+from dbus_mqtt_battery import (
+    VERSION,
+    POLL_INTERVAL_MS,
+    get_bus,
+    setup_main_loop,
+    register_signal_handlers,
+    create_poll_function,
+    run_main_loop,
+    setup_dbus_paths_common,
+    setup_dbus_paths_dc,
+)
 
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
-
-# Poll interval
-POLL_INTERVAL_MS = 2000
 
 # Data timeout (seconds) - if no update for this long, consider source offline
 DATA_TIMEOUT = 30.0
@@ -70,10 +70,10 @@ DATA_TIMEOUT = 30.0
 # Default battery capacity per chain (Ah) - used for SoC calculation
 DEFAULT_CHAIN_CAPACITY = 280.0  # 4x 70Ah batteries in series
 
-
-def get_bus():
-    """Get the appropriate D-Bus (session or system)."""
-    return dbus.SessionBus() if "DBUS_SESSION_BUS_ADDRESS" in os.environ else dbus.SystemBus()
+# D-Bus path constants for DC measurements (duplicated in _read_source)
+DC_VOLTAGE_PATH = "/Dc/0/Voltage"
+DC_CURRENT_PATH = "/Dc/0/Current"
+DC_POWER_PATH = "/Dc/0/Power"
 
 
 class SourceStatus:
@@ -84,10 +84,10 @@ class SourceStatus:
         self.service = service
         self.online = False
         self.last_seen = 0.0
-        self.voltage: Optional[float] = None
-        self.current: Optional[float] = None
-        self.soc: Optional[float] = None
-        self.power: Optional[float] = None
+        self.voltage: float | None = None
+        self.current: float | None = None
+        self.soc: float | None = None
+        self.power: float | None = None
 
 
 class DbusReader:
@@ -109,7 +109,7 @@ class DbusReader:
             logger.debug("D-Bus connection established")
             return True
         except Exception as e:
-            logger.error("D-Bus connection failed: %s", e)
+            logger.exception("D-Bus connection failed: %s", e)
             self.bus = None
             return False
 
@@ -125,7 +125,7 @@ class DbusReader:
         self._last_reconnect_attempt = now
         return self._connect()
 
-    def get_value(self, service: str, path: str) -> Optional[float]:
+    def get_value(self, service: str, path: str) -> float | None:
         """Get a value from D-Bus service"""
         if not self._ensure_connected():
             return None
@@ -184,7 +184,7 @@ class DbusReader:
         try:
             self.bus.get_object(service, "/")
             return True
-        except:
+        except dbus.exceptions.DBusException:
             return False
 
 
@@ -194,7 +194,7 @@ class VirtualBatteryService:
     def __init__(
         self,
         smartshunt_suffix: str,
-        chain_suffixes: List[str],
+        chain_suffixes: list[str],
         device_instance: int = 514,
         product_name: str = "Virtual Battery Chain",
         chain_capacity: float = DEFAULT_CHAIN_CAPACITY,
@@ -209,7 +209,7 @@ class VirtualBatteryService:
         self.smartshunt = SourceStatus(
             "SmartShunt", f"com.victronenergy.battery.{smartshunt_suffix}"
         )
-        self.chains: List[SourceStatus] = []
+        self.chains: list[SourceStatus] = []
         for i, suffix in enumerate(chain_suffixes):
             self.chains.append(SourceStatus(f"Chain{i + 1}", f"com.victronenergy.battery.{suffix}"))
 
@@ -232,25 +232,20 @@ class VirtualBatteryService:
     def _setup_paths(self):
         """Setup D-Bus paths for Victron GUI v2 compatibility"""
 
-        # Management paths
-        self._dbusservice.add_path("/Mgmt/ProcessName", __file__)
-        self._dbusservice.add_path("/Mgmt/ProcessVersion", VERSION)
-        self._dbusservice.add_path("/Mgmt/Connection", "Virtual (Calculated)")
+        # Common paths (management, device identification)
+        setup_dbus_paths_common(
+            self._dbusservice,
+            process_name=__file__,
+            version=VERSION,
+            connection="Virtual (Calculated)",
+            device_instance=self.device_instance,
+            product_name=self.product_name,
+            hardware_version="Virtual BMS",
+            product_id=0xB035,
+        )
 
-        # Device identification
-        self._dbusservice.add_path("/DeviceInstance", self.device_instance)
-        self._dbusservice.add_path("/ProductId", 0xB035)
-        self._dbusservice.add_path("/ProductName", self.product_name)
-        self._dbusservice.add_path("/CustomName", self.product_name, writeable=True)
-        self._dbusservice.add_path("/FirmwareVersion", VERSION)
-        self._dbusservice.add_path("/HardwareVersion", "Virtual BMS")
-        self._dbusservice.add_path("/Connected", 1)
-
-        # Main battery data
-        self._dbusservice.add_path("/Dc/0/Voltage", None)
-        self._dbusservice.add_path("/Dc/0/Current", None)
-        self._dbusservice.add_path("/Dc/0/Power", None)
-        self._dbusservice.add_path("/Dc/0/Temperature", None)
+        # DC measurements (without formatting for simplicity)
+        setup_dbus_paths_dc(self._dbusservice, include_formats=False)
 
         # Capacity and state
         self._dbusservice.add_path("/Soc", None)
@@ -307,10 +302,10 @@ class VirtualBatteryService:
 
     def _read_source(self, source: SourceStatus) -> bool:
         """Read data from a source and update its status. Returns True if data is valid."""
-        voltage = self.dbus_reader.get_value(source.service, "/Dc/0/Voltage")
-        current = self.dbus_reader.get_value(source.service, "/Dc/0/Current")
+        voltage = self.dbus_reader.get_value(source.service, DC_VOLTAGE_PATH)
+        current = self.dbus_reader.get_value(source.service, DC_CURRENT_PATH)
         soc = self.dbus_reader.get_value(source.service, "/Soc")
-        power = self.dbus_reader.get_value(source.service, "/Dc/0/Power")
+        power = self.dbus_reader.get_value(source.service, DC_POWER_PATH)
 
         now = time()
 
@@ -329,7 +324,7 @@ class VirtualBatteryService:
             logger.warning("%s went offline (no data for %ss)", source.name, DATA_TIMEOUT)
         return False
 
-    def _get_status_string(self) -> Tuple[str, str, bool]:
+    def _get_status_string(self) -> tuple[str, str, bool]:
         """Get status string showing online/offline sources.
         Returns: (status_string, missing_sources, all_online)
         """
@@ -401,9 +396,9 @@ class VirtualBatteryService:
         if not self.smartshunt.online:
             logger.debug("SmartShunt offline - cannot calculate virtual battery")
             self._dbusservice["/Connected"] = 0
-            self._dbusservice["/Dc/0/Voltage"] = None
-            self._dbusservice["/Dc/0/Current"] = None
-            self._dbusservice["/Dc/0/Power"] = None
+            self._dbusservice[DC_VOLTAGE_PATH] = None
+            self._dbusservice[DC_CURRENT_PATH] = None
+            self._dbusservice[DC_POWER_PATH] = None
             self._dbusservice["/Soc"] = None
             return
 
@@ -461,9 +456,9 @@ class VirtualBatteryService:
         self.last_update = now
 
         # Update D-Bus paths
-        self._dbusservice["/Dc/0/Voltage"] = round(virtual_voltage, 2)
-        self._dbusservice["/Dc/0/Current"] = round(virtual_current, 2)
-        self._dbusservice["/Dc/0/Power"] = round(virtual_power, 1)
+        self._dbusservice[DC_VOLTAGE_PATH] = round(virtual_voltage, 2)
+        self._dbusservice[DC_CURRENT_PATH] = round(virtual_current, 2)
+        self._dbusservice[DC_POWER_PATH] = round(virtual_power, 1)
         self._dbusservice["/Soc"] = round(virtual_soc, 1)
         self._dbusservice["/Capacity"] = round(remaining_capacity, 1)
         self._dbusservice["/ConsumedAmphours"] = round(self.consumed_ah, 1)
@@ -547,21 +542,14 @@ def main():
     logger.info("Chain capacity: %s Ah", args.capacity)
 
     # Setup D-Bus main loop
-    DBusGMainLoop(set_as_default=True)
-    mainloop = gobject.MainLoop()
-
-    def graceful_shutdown(signum, frame):
-        """Handle shutdown signals gracefully"""
-        sig_name = signal.Signals(signum).name if hasattr(signal, "Signals") else str(signum)
-        logger.info("Received %s, shutting down gracefully...", sig_name)
-        mainloop.quit()
+    mainloop = setup_main_loop()
 
     # Register signal handlers
-    signal.signal(signal.SIGTERM, graceful_shutdown)
-    signal.signal(signal.SIGINT, graceful_shutdown)
+    register_signal_handlers(mainloop)
 
     # Wait for services to be available
     logger.info("Waiting for D-Bus services...")
+
     sleep(5)
 
     # Create virtual battery service
@@ -573,40 +561,11 @@ def main():
         chain_capacity=args.capacity,
     )
 
-    # Periodic garbage collection counter
-    gc_counter = 0
-    GC_INTERVAL = 150  # Run GC every 150 polls (~5 minutes at 2s interval)
+    # Create poll function with GC
+    poll_fn = create_poll_function(service)
 
-    def poll():
-        """Periodic update with memory management"""
-        nonlocal gc_counter
-        try:
-            service.update()
-        except Exception as e:
-            logger.error("Error in poll: %s", e)
-
-        # Periodic garbage collection for memory-constrained Venus OS
-        gc_counter += 1
-        if gc_counter >= GC_INTERVAL:
-            gc_counter = 0
-            gc.collect()
-
-        return True
-
-    # Start polling
-    gobject.timeout_add(POLL_INTERVAL_MS, poll)
-
-    logger.info("Service started, entering main loop")
-
-    try:
-        mainloop.run()
-    except KeyboardInterrupt:
-        logger.info("KeyboardInterrupt received")
-    except Exception as e:
-        logger.error("Unexpected error in main loop: %s", e)
-    finally:
-        gc.collect()
-        logger.info("Shutdown complete")
+    # Start polling and run main loop
+    run_main_loop(mainloop, POLL_INTERVAL_MS, poll_fn)
 
 
 if __name__ == "__main__":

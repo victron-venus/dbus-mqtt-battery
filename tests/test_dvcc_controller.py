@@ -32,7 +32,7 @@ class TestDvccController(unittest.TestCase):  # pylint: disable=too-many-public-
 
     def test_calculate_ccl_from_cell_voltage_at_start_limit(self):
         """Test CCL calculation at the start limit voltage"""
-        ccl, reason = self.controller.calculate_ccl_from_cell_voltage(3.45)
+        _, reason = self.controller.calculate_ccl_from_cell_voltage(3.45)
         # At exactly START_LIMIT, boundary case - checking actual behavior
         self.assertIn("reducing", reason)
 
@@ -47,7 +47,7 @@ class TestDvccController(unittest.TestCase):  # pylint: disable=too-many-public-
 
     def test_calculate_ccl_from_cell_voltage_at_balance_voltage(self):
         """Test CCL calculation at balance voltage"""
-        ccl, reason = self.controller.calculate_ccl_from_cell_voltage(3.50)
+        _, reason = self.controller.calculate_ccl_from_cell_voltage(3.50)
         # At BALANCE_VOLTAGE, should be in the balancing zone
         self.assertIn("balancing", reason)
 

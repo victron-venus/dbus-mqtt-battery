@@ -7,7 +7,8 @@ on:
     - cron: '30 2 * * 3'  # Weekly on Wednesdays at 2:30 AM UTC
 
 # Declare default permissions as read only.
-permissions: read-all
+permissions:
+  contents: read
 
 jobs:
   analysis:
@@ -26,12 +27,12 @@ jobs:
         egress-policy: audit
 
     - name: Checkout repository
-      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       with:
         persist-credentials: false
 
     - name: Run Scorecard analysis
-      uses: ossf/scorecard-action@0864cf19026789058feabb7e87baa5f140aac736 # v2.3.1
+      uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
       with:
         results_file: results.sarif
         results_format: sarif
@@ -41,6 +42,6 @@ jobs:
         publish_results: true
 
     - name: Upload Scorecard results to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@7fd177fa680c9881b53cdab4d346d32574c9f7f4 # v3.35.4
+      uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a # v4.37.1
       with:
         sarif_file: results.sarif

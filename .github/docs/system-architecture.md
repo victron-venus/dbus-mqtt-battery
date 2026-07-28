@@ -65,7 +65,7 @@ flowchart TB
 ### Package Not Showing in PackageManager
 
 **Actions:**
-\`\`\`bash
+```bash
 # Verify version file
 cat /data/dbus-mqtt-battery/version
 
@@ -74,12 +74,12 @@ ls -la /data/dbus-mqtt-battery/setup
 
 # Restart PackageManager
 svc -t /service/PackageManager
-\`\`\`
+```
 
 ### Chain Shows N/A
 
 **Actions:**
-\`\`\`bash
+```bash
 # Check ESP32 is publishing
 mosquitto_sub -v -t 'battery/#' -C 5
 
@@ -88,11 +88,11 @@ svstat /service/dbus-mqtt-chain1
 
 # Verify D-Bus service
 dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue
-\`\`\`
+```
 
 ---
 
 ## Related Documentation
 
 - [inverter-control System Architecture](../inverter-control/.github/docs/system-architecture.md)
-- [ADR-001: Grid-Zero Architecture](../inverter-control/.github/docs/adr-001-grid-zero-architecture.md)
+- [ADR-003: DVCC for JBD BMS Protection](../inverter-control/.github/docs/adr-001-grid-zero-architecture.md)

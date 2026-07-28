@@ -27,7 +27,6 @@ line-length = 100
 
 [tool.ruff.lint]
 ignore = [
-    "E722",  # Do not use bare except
     "F841",  # Local variable assigned but never used
 ]
 
