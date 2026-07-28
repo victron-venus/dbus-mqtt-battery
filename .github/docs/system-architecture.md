@@ -95,4 +95,4 @@ dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue
 ## Related Documentation
 
 - [inverter-control System Architecture](../inverter-control/.github/docs/system-architecture.md)
-- [ADR-003: DVCC for JBD BMS Protection](../inverter-control/.github/docs/adr-001-grid-zero-architecture.md)
+- [ADR-001: Grid-Zero Architecture](../inverter-control/.github/docs/adr-001-grid-zero-architecture.md)
