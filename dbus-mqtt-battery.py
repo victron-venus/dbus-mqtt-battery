@@ -68,6 +68,9 @@ from dbus_mqtt_battery import (
     setup_dbus_paths_common,
     setup_dbus_paths_dc,
     setup_dbus_paths_alarms,
+    PATH_DC_VOLTAGE,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
 )
 
 # Logging setup
@@ -314,9 +317,9 @@ class DbusAggregateService:
         self._dbusservice["/Connected"] = 1
 
         # DC measurements
-        self._dbusservice["/Dc/0/Voltage"] = round(data["voltage"], 2)
-        self._dbusservice["/Dc/0/Current"] = round(data["current"], 2)
-        self._dbusservice["/Dc/0/Power"] = round(data["power"], 0)
+        self._dbusservice[PATH_DC_VOLTAGE] = round(data["voltage"], 2)
+        self._dbusservice[PATH_DC_CURRENT] = round(data["current"], 2)
+        self._dbusservice[PATH_DC_POWER] = round(data["power"], 0)
         self._dbusservice["/Dc/0/Temperature"] = round(data["temperature"], 1)
 
         # State of charge
@@ -434,12 +437,8 @@ class DbusAggregateService:
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
 
-    def _update_alarms(self, data: dict[str, Any]):
-        """Update alarm states based on battery data.
-
-        Alarm values: 0 = OK, 1 = Warning, 2 = Alarm/Critical
-        """
-        # Low SoC alarm
+    def _update_soc_alarm(self, data: dict[str, Any]):
+        """Update low state-of-charge alarm."""
         soc = data.get("soc", 100)
         if soc <= ALARM_LOW_SOC_CRITICAL:
             self._dbusservice["/Alarms/LowSoc"] = 2
@@ -450,62 +449,66 @@ class DbusAggregateService:
         else:
             self._dbusservice["/Alarms/LowSoc"] = 0
 
-        # Low cell voltage alarm
-        min_cell = data.get("min_cell")
-        if min_cell is not None:
-            if min_cell <= ALARM_LOW_CELL_CRITICAL:
-                self._dbusservice["/Alarms/LowCellVoltage"] = 2
-                logger.warning(
-                    "ALARM: Critical Low Cell Voltage (%.3fV, Cell %s)",
-                    min_cell,
-                    data.get("min_cell_id", "?"),
-                )
-            elif min_cell <= ALARM_LOW_CELL_VOLTAGE:
-                self._dbusservice["/Alarms/LowCellVoltage"] = 1
-                logger.warning(
-                    "WARNING: Low Cell Voltage (%.3fV, Cell %s)",
-                    min_cell,
-                    data.get("min_cell_id", "?"),
-                )
-            else:
-                self._dbusservice["/Alarms/LowCellVoltage"] = 0
+    def _update_low_cell_voltage_alarm(self, min_cell, min_cell_id):
+        """Update low cell voltage alarm."""
+        if min_cell is None:
+            return
+        if min_cell <= ALARM_LOW_CELL_CRITICAL:
+            self._dbusservice["/Alarms/LowCellVoltage"] = 2
+            logger.warning(
+                "ALARM: Critical Low Cell Voltage (%.3fV, Cell %s)",
+                min_cell,
+                min_cell_id,
+            )
+        elif min_cell <= ALARM_LOW_CELL_VOLTAGE:
+            self._dbusservice["/Alarms/LowCellVoltage"] = 1
+            logger.warning(
+                "WARNING: Low Cell Voltage (%.3fV, Cell %s)",
+                min_cell,
+                min_cell_id,
+            )
+        else:
+            self._dbusservice["/Alarms/LowCellVoltage"] = 0
 
-        # High cell voltage alarm
-        max_cell = data.get("max_cell")
-        if max_cell is not None:
-            if max_cell >= ALARM_HIGH_CELL_CRITICAL:
-                self._dbusservice["/Alarms/HighCellVoltage"] = 2
-                logger.warning(
-                    "ALARM: Critical High Cell Voltage (%.3fV, Cell %s)",
-                    max_cell,
-                    data.get("max_cell_id", "?"),
-                )
-            elif max_cell >= ALARM_HIGH_CELL_VOLTAGE:
-                self._dbusservice["/Alarms/HighCellVoltage"] = 1
-                logger.warning(
-                    "WARNING: High Cell Voltage (%.3fV, Cell %s)",
-                    max_cell,
-                    data.get("max_cell_id", "?"),
-                )
-            else:
-                self._dbusservice["/Alarms/HighCellVoltage"] = 0
+    def _update_high_cell_voltage_alarm(self, max_cell, max_cell_id):
+        """Update high cell voltage alarm."""
+        if max_cell is None:
+            return
+        if max_cell >= ALARM_HIGH_CELL_CRITICAL:
+            self._dbusservice["/Alarms/HighCellVoltage"] = 2
+            logger.warning(
+                "ALARM: Critical High Cell Voltage (%.3fV, Cell %s)",
+                max_cell,
+                max_cell_id,
+            )
+        elif max_cell >= ALARM_HIGH_CELL_VOLTAGE:
+            self._dbusservice["/Alarms/HighCellVoltage"] = 1
+            logger.warning(
+                "WARNING: High Cell Voltage (%.3fV, Cell %s)",
+                max_cell,
+                max_cell_id,
+            )
+        else:
+            self._dbusservice["/Alarms/HighCellVoltage"] = 0
 
-        # Cell imbalance alarm
-        if min_cell is not None and max_cell is not None:
-            diff = max_cell - min_cell
-            if diff >= ALARM_CELL_IMBALANCE * 2:
-                self._dbusservice["/Alarms/CellImbalance"] = 2
-                logger.warning("ALARM: High Cell Imbalance (%.3fV)", diff)
-            elif diff >= ALARM_CELL_IMBALANCE:
-                self._dbusservice["/Alarms/CellImbalance"] = 1
-            else:
-                self._dbusservice["/Alarms/CellImbalance"] = 0
+    def _update_cell_imbalance_alarm(self, min_cell, max_cell):
+        """Update cell imbalance alarm."""
+        if min_cell is None or max_cell is None:
+            return
+        diff = max_cell - min_cell
+        if diff >= ALARM_CELL_IMBALANCE * 2:
+            self._dbusservice["/Alarms/CellImbalance"] = 2
+            logger.warning("ALARM: High Cell Imbalance (%.3fV)", diff)
+        elif diff >= ALARM_CELL_IMBALANCE:
+            self._dbusservice["/Alarms/CellImbalance"] = 1
+        else:
+            self._dbusservice["/Alarms/CellImbalance"] = 0
 
-        # Temperature alarms
+    def _update_temperature_alarms(self, data: dict[str, Any]):
+        """Update high/low temperature alarms."""
         max_temp = data.get("max_temp", 25)
         min_temp = data.get("min_temp", 25)
 
-        # High temperature
         if max_temp >= ALARM_HIGH_TEMP_CRITICAL:
             self._dbusservice["/Alarms/HighTemperature"] = 2
             logger.warning("ALARM: Critical High Temperature (%s°C)", max_temp)
@@ -515,7 +518,6 @@ class DbusAggregateService:
         else:
             self._dbusservice["/Alarms/HighTemperature"] = 0
 
-        # Low temperature
         if min_temp <= ALARM_LOW_TEMP_CRITICAL:
             self._dbusservice["/Alarms/LowTemperature"] = 2
             logger.warning("ALARM: Critical Low Temperature (%s°C)", min_temp)
@@ -525,8 +527,12 @@ class DbusAggregateService:
         else:
             self._dbusservice["/Alarms/LowTemperature"] = 0
 
-        # BMS protection active (discharging blocked but should be discharging)
-        # This indicates BMS has entered protection mode
+    def _update_internal_failure_alarm(self, data: dict[str, Any]):
+        """Update BMS protection / internal failure alarm.
+
+        Triggered when discharging is blocked but should be discharging,
+        indicating the BMS has entered protection mode.
+        """
         modules_blocking = data.get("modules_blocking_discharge", 0)
         modules_offline = data.get("modules_offline", 0)
 
@@ -544,27 +550,46 @@ class DbusAggregateService:
         else:
             self._dbusservice["/Alarms/InternalFailure"] = 0
 
-        # Low/High voltage (aggregate)
+    def _update_voltage_alarms(self, data: dict[str, Any]):
+        """Update low/high aggregate voltage alarms."""
         voltage = data.get("voltage", 0)
+        if voltage <= 0:
+            return
+
         cell_count = data.get("cell_count", 16)
         expected_nominal = cell_count * 3.2  # LiFePO4 nominal
         expected_min = cell_count * 2.8
         expected_max = cell_count * 3.65
 
-        if voltage > 0:
-            if voltage <= expected_min:
-                self._dbusservice["/Alarms/LowVoltage"] = 2
-            elif voltage <= expected_nominal * 0.9:
-                self._dbusservice["/Alarms/LowVoltage"] = 1
-            else:
-                self._dbusservice["/Alarms/LowVoltage"] = 0
+        if voltage <= expected_min:
+            self._dbusservice["/Alarms/LowVoltage"] = 2
+        elif voltage <= expected_nominal * 0.9:
+            self._dbusservice["/Alarms/LowVoltage"] = 1
+        else:
+            self._dbusservice["/Alarms/LowVoltage"] = 0
 
-            if voltage >= expected_max:
-                self._dbusservice["/Alarms/HighVoltage"] = 2
-            elif voltage >= expected_nominal * 1.1:
-                self._dbusservice["/Alarms/HighVoltage"] = 1
-            else:
-                self._dbusservice["/Alarms/HighVoltage"] = 0
+        if voltage >= expected_max:
+            self._dbusservice["/Alarms/HighVoltage"] = 2
+        elif voltage >= expected_nominal * 1.1:
+            self._dbusservice["/Alarms/HighVoltage"] = 1
+        else:
+            self._dbusservice["/Alarms/HighVoltage"] = 0
+
+    def _update_alarms(self, data: dict[str, Any]):
+        """Update alarm states based on battery data.
+
+        Alarm values: 0 = OK, 1 = Warning, 2 = Alarm/Critical
+        """
+        min_cell = data.get("min_cell")
+        max_cell = data.get("max_cell")
+
+        self._update_soc_alarm(data)
+        self._update_low_cell_voltage_alarm(min_cell, data.get("min_cell_id", "?"))
+        self._update_high_cell_voltage_alarm(max_cell, data.get("max_cell_id", "?"))
+        self._update_cell_imbalance_alarm(min_cell, max_cell)
+        self._update_temperature_alarms(data)
+        self._update_internal_failure_alarm(data)
+        self._update_voltage_alarms(data)
 
     def _update_dvcc(self, data: dict[str, Any]):
         """
