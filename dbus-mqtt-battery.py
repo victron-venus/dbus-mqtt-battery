@@ -31,7 +31,7 @@ import os
 import argparse
 import logging
 from time import time, sleep
-from typing import Any
+from typing import Any, Dict
 
 
 # Add Victron library path
@@ -68,6 +68,9 @@ from dbus_mqtt_battery import (
     setup_dbus_paths_common,
     setup_dbus_paths_dc,
     setup_dbus_paths_alarms,
+    PATH_DC_VOLTAGE,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
 )
 
 # Logging setup
@@ -314,9 +317,9 @@ class DbusAggregateService:
         self._dbusservice["/Connected"] = 1
 
         # DC measurements
-        self._dbusservice["/Dc/0/Voltage"] = round(data["voltage"], 2)
-        self._dbusservice["/Dc/0/Current"] = round(data["current"], 2)
-        self._dbusservice["/Dc/0/Power"] = round(data["power"], 0)
+        self._dbusservice[PATH_DC_VOLTAGE] = round(data["voltage"], 2)
+        self._dbusservice[PATH_DC_CURRENT] = round(data["current"], 2)
+        self._dbusservice[PATH_DC_POWER] = round(data["power"], 0)
         self._dbusservice["/Dc/0/Temperature"] = round(data["temperature"], 1)
 
         # State of charge
@@ -434,7 +437,7 @@ class DbusAggregateService:
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
 
-    def _update_alarms(self, data: dict[str, Any]):
+    def _update_alarms(self, data: Dict[str, Any]):
         """Update alarm states based on battery data.
 
         Alarm values: 0 = OK, 1 = Warning, 2 = Alarm/Critical
