@@ -31,7 +31,7 @@ import os
 import argparse
 import logging
 from time import time, sleep
-from typing import Any, Dict
+from typing import Any
 
 
 # Add Victron library path
@@ -437,7 +437,7 @@ class DbusAggregateService:
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
 
-    def _update_alarms(self, data: Dict[str, Any]):
+    def _update_alarms(self, data: dict[str, Any]):
         """Update alarm states based on battery data.
 
         Alarm values: 0 = OK, 1 = Warning, 2 = Alarm/Critical
