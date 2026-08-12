@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# -*- coding: utf-8 -*-
 """
 dbus-mqtt-battery - MQTT to D-Bus Bridge for JBD BMS via ESP32
 =============================================================
@@ -26,13 +25,12 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-import os
 import argparse
 import logging
-from time import time, sleep
+import os
+import sys
+from time import sleep, time
 from typing import Any
-
 
 # Add Victron library path
 sys.path.insert(
@@ -45,32 +43,32 @@ sys.path.insert(
 
 from vedbus import VeDbusService
 
+# Import from package (replaces duplicated BatteryData and MqttBatteryClient)
+from dbus_mqtt_battery import (
+    DVCC_CELLS_PER_BMS,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
+    PATH_DC_VOLTAGE,
+    POLL_INTERVAL_MS,
+    VERSION,
+    MqttBatteryClient,
+    create_poll_function,
+    get_bus,
+    register_signal_handlers,
+    run_main_loop,
+    setup_dbus_paths_alarms,
+    setup_dbus_paths_common,
+    setup_dbus_paths_dc,
+    setup_main_loop,
+)
+
 # First-party imports (local modules)
 from dvcc import (
-    DvccController,
+    DVCC_CELL_MAX_VOLTAGE,
     DVCC_MAX_CHARGE_CURRENT,
     DVCC_MAX_DISCHARGE_CURRENT,
     DVCC_MIN_CHARGE_CURRENT,
-    DVCC_CELL_MAX_VOLTAGE,
-)
-
-# Import from package (replaces duplicated BatteryData and MqttBatteryClient)
-from dbus_mqtt_battery import (
-    MqttBatteryClient,
-    VERSION,
-    POLL_INTERVAL_MS,
-    DVCC_CELLS_PER_BMS,
-    get_bus,
-    setup_main_loop,
-    register_signal_handlers,
-    create_poll_function,
-    run_main_loop,
-    setup_dbus_paths_common,
-    setup_dbus_paths_dc,
-    setup_dbus_paths_alarms,
-    PATH_DC_VOLTAGE,
-    PATH_DC_CURRENT,
-    PATH_DC_POWER,
+    DvccController,
 )
 
 # Logging setup
@@ -610,11 +608,9 @@ class DbusAggregateService:
         cvl = dvcc["cvl"]
         ccl_reason = dvcc["ccl_reason"]
         # dcl_reason is intentionally not used
-        _ = dvcc["dcl_reason"]  # noqa: F841
+        _ = dvcc["dcl_reason"]
         max_cell = dvcc.get("max_cell_voltage")
         max_cell_id = dvcc.get("max_cell_id")
-        min_cell = dvcc.get("min_cell_voltage")
-        min_cell_id = dvcc.get("min_cell_id")
         cell_delta = dvcc.get("cell_delta")
 
         # Update D-Bus values for Victron DVCC
@@ -641,32 +637,18 @@ class DbusAggregateService:
             should_log = True  # Periodic status update
 
         if should_log:
-            self.last_dvcc_log = now
-            delta_str = f", Δ={cell_delta:.3f}V" if cell_delta is not None else ""
-            cell_info = (
-                f"Cell {max_cell_id}={max_cell:.3f}V"
-                if max_cell is not None and max_cell_id is not None
-                else ""
+            self.last_dvcc_log = self._log_dvcc_status(
+                now,
+                ccl,
+                ccl_reason,
+                dcl,
+                cvl,
+                max_cell_id,
+                max_cell,
+                cell_delta,
+                self.dvcc_log_interval,
+                self.last_dvcc_log,
             )
-
-            if is_limiting and max_cell_id is not None:
-                # Clear message when limiting due to cell voltage
-                logger.info(
-                    "DVCC limiting current to %.1fA because of %s%s",
-                    ccl,
-                    cell_info,
-                    delta_str,
-                )
-            else:
-                logger.info(
-                    "DVCC: CCL=%.1fA (%s), DCL=%.1fA, CVL=%.1fV, %s%s",
-                    ccl,
-                    ccl_reason,
-                    dcl,
-                    cvl,
-                    cell_info,
-                    delta_str,
-                )
 
         # If CCL is critically low, log warning with cell info
         if ccl <= DVCC_MIN_CHARGE_CURRENT and ccl_reason not in (
@@ -681,6 +663,46 @@ class DbusAggregateService:
                 else ccl_reason
             )
             logger.warning("DVCC: Charge current limited to %.1fA! Reason: %s", ccl, cell_info)
+
+    def _log_dvcc_status(
+        self,
+        now: float,
+        ccl: float,
+        ccl_reason: str,
+        dcl: float,
+        cvl: float,
+        max_cell_id: int | None,
+        max_cell: float | None,
+        cell_delta: float | None,
+        dvcc_log_interval: float,
+        last_dvcc_log: float,
+    ) -> float:
+        """Log DVCC status and return updated last_dvcc_log."""
+        delta_str = f", Δ={cell_delta:.3f}V" if cell_delta is not None else ""
+        cell_info = (
+            f"Cell {max_cell_id}={max_cell:.3f}V"
+            if max_cell is not None and max_cell_id is not None
+            else ""
+        )
+
+        if ccl < DVCC_MAX_CHARGE_CURRENT * 0.5:
+            logger.info(
+                "DVCC limiting current to %.1fA because of %s%s",
+                ccl,
+                cell_info,
+                delta_str,
+            )
+        else:
+            logger.info(
+                "DVCC: CCL=%.1fA (%s), DCL=%.1fA, CVL=%.1fV, %s%s",
+                ccl,
+                ccl_reason,
+                dcl,
+                cvl,
+                cell_info,
+                delta_str,
+            )
+        return now
 
 
 # =============================================================================
