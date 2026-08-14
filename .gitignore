@@ -1,5 +1,18 @@
+# Existing ignored patterns
 commit.txt
 release.txt
 logs
 __pycache__/
 *.pyc
+
+# Additional patterns to ignore
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+.venv/
+*.bak
+*~
+*.swp
+.vscode/
+.idea/
+.mcp.json
