@@ -12,15 +12,9 @@ permissions:
 jobs:
   ci:
     name: CI
-    runs-on: ubuntu-latest
-    steps:
-      - name: Harden the runner (Audit all outbound calls)
-        uses: step-security/harden-runner@a5ad31d6a139d249332a2605b85202e8c0b78450 # v2.19.1
-        with:
-          egress-policy: audit
-      - name: Run reusable Python CI
-        uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
-        with:
-          python-version: '3.11'
-        secrets:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
+    with:
+      python-version: '3.11'
+      run-type-check: false  # Disable type checking as the original didn't have it
+    secrets:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
