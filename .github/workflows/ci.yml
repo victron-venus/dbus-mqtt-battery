@@ -16,5 +16,3 @@ jobs:
     with:
       python-version: '3.11'
       run-type-check: false  # Disable type checking as the original didn't have it
-    secrets:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
