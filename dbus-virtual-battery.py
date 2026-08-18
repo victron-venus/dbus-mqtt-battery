@@ -180,10 +180,12 @@ class DbusReader:
         except dbus.exceptions.DBusException:
             return False
 
-    def list_battery_services(self, pattern: str = "mqtt_chain") -> list[str]:
+    def list_battery_services(
+        self, pattern: str = "mqtt_chain", exclude_self: str | None = None
+    ) -> list[str]:
         """List all D-Bus battery services matching a pattern.
 
-        Returns suffixes (e.g., ['mqtt_chain1', 'mqtt_chain2']) for services
+        Returns suffixes (e.g., ['mqtt_chain1', 'ttyUSB4']) for services
         matching com.victronenergy.battery.{pattern}*
         """
         if not self._ensure_connected():
@@ -193,9 +195,12 @@ class DbusReader:
             bus_names = self.bus.list_names()
             suffixes = []
             for name in bus_names:
-                if name.startswith("com.victronenergy.battery.") and pattern in name:
-                    # Extract suffix after "com.victronenergy.battery."
+                if name.startswith("com.victronenergy.battery."):
                     suffix = name[len("com.victronenergy.battery.") :]
+                    if pattern and pattern not in suffix:
+                        continue
+                    if exclude_self and suffix == exclude_self:
+                        continue
                     suffixes.append(suffix)
             return sorted(suffixes)
         except dbus.exceptions.DBusException:
@@ -208,7 +213,8 @@ class VirtualBatteryService:
 
     def __init__(
         self,
-        smartshunt_suffix: str,
+        smartshunt_suffix: str | None = None,
+        smartshunt_index: int = 0,
         chain_suffixes: list[str] | None = None,
         device_instance: int = 514,
         product_name: str = "Virtual Battery Chain",
@@ -219,20 +225,37 @@ class VirtualBatteryService:
         self.product_name = product_name
         self.chain_capacity = chain_capacity
 
+        # Auto-discover SmartShunt if not provided
+        if smartshunt_suffix is None:
+            smartshunt_suffix = self._discover_smartshunt(smartshunt_index)
+            if smartshunt_suffix is None:
+                logger.warning(
+                    "No SmartShunt found on D-Bus - will run in fallback mode (no chains subtracted)"
+                )
+            else:
+                logger.info("Auto-discovered SmartShunt: %s", smartshunt_suffix)
+
         # Allow chain_suffixes=None to mean "auto-discover", but ignore empty list
         if chain_suffixes is None or len(chain_suffixes) == 0:
-            # Auto-discover chain services on D-Bus
-            discovered = self.dbus_reader.list_battery_services("mqtt_chain")
-            # Filter out virtual_chain if it somehow matches (shouldn't)
-            chain_suffixes = [s for s in discovered if "virtual" not in s.lower()]
+            # Auto-discover ALL battery services on D-Bus, excluding this virtual_chain service and the SmartShunt
+            discovered = self.dbus_reader.list_battery_services(
+                pattern="", exclude_self="virtual_chain"
+            )
+            # Also exclude smartshunt_suffix since it's handled separately
+            if smartshunt_suffix:
+                chain_suffixes = [s for s in discovered if s != smartshunt_suffix]
+            else:
+                chain_suffixes = discovered
             logger.info("Auto-discovered chain services: %s", chain_suffixes)
         else:
             logger.info("Using provided chain suffixes: %s", chain_suffixes)
 
         # Track data sources
         self.smartshunt = SourceStatus(
-            "SmartShunt", f"com.victronenergy.battery.{smartshunt_suffix}"
+            "SmartShunt",
+            f"com.victronenergy.battery.{smartshunt_suffix}" if smartshunt_suffix else "",
         )
+        self.smartshunt_suffix = smartshunt_suffix
         self.chains: list[SourceStatus] = []
         for i, suffix in enumerate(chain_suffixes):
             self.chains.append(SourceStatus(f"Chain{i + 1}", f"com.victronenergy.battery.{suffix}"))
@@ -252,6 +275,38 @@ class VirtualBatteryService:
         logger.info("D-Bus service registered: %s", service_name)
         logger.info("SmartShunt source: %s", self.smartshunt.service)
         logger.info("Chain sources to subtract: %s", [c.service for c in self.chains])
+
+    def _discover_smartshunt(self, index: int = 0) -> str | None:
+        """Auto-discover SmartShunt services on D-Bus.
+        Looks for services that are likely SmartShunts (ttyUSB*, ttyACM*, ve_bus, etc.)
+        Returns the suffix at the given index, or None if not found.
+        """
+        # Common SmartShunt/service patterns
+        smartshunt_patterns = ["ttyUSB", "ttyACM", "ve_bus", "ve.can", "smartshunt", "shunt"]
+        all_services = self.dbus_reader.list_battery_services(
+            pattern="", exclude_self="virtual_chain"
+        )
+
+        # Filter for likely SmartShunt services
+        candidates = [
+            s for s in all_services if any(p.lower() in s.lower() for p in smartshunt_patterns)
+        ]
+
+        # If no candidates match patterns, fall back to all services (already excludes virtual_chain)
+        if not candidates:
+            candidates = all_services
+
+        if not candidates:
+            return None
+
+        if index < len(candidates):
+            return candidates[index]
+        logger.warning(
+            "SmartShunt index %d out of range (found %d), using first",
+            index,
+            len(candidates),
+        )
+        return candidates[0]
 
     def _setup_paths(self):
         """Setup D-Bus paths for Victron GUI v2 compatibility"""
@@ -541,8 +596,14 @@ def main():
     parser = argparse.ArgumentParser(description="Virtual Battery Calculator for Victron")
     parser.add_argument(
         "--smartshunt",
-        default="ttyUSB4",
-        help="SmartShunt D-Bus service suffix (default: ttyUSB4)",
+        default=None,
+        help="SmartShunt D-Bus service suffix (default: auto-discover first)",
+    )
+    parser.add_argument(
+        "--smartshunt-index",
+        type=int,
+        default=0,
+        help="Index of SmartShunt to use if multiple found (default: 0 for first)",
     )
     parser.add_argument(
         "--chains",
@@ -565,7 +626,10 @@ def main():
     args = parser.parse_args()
 
     logger.info("=== dbus-virtual-battery v%s ===", VERSION)
-    logger.info("SmartShunt: com.victronenergy.battery.%s", args.smartshunt)
+    if args.smartshunt:
+        logger.info("SmartShunt: com.victronenergy.battery.%s (user-specified)", args.smartshunt)
+    else:
+        logger.info("SmartShunt: auto-discover (index %d)", args.smartshunt_index)
     if args.chains:
         logger.info("Chains to subtract (provided): %s", args.chains)
     else:
