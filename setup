@@ -104,13 +104,7 @@ EOF
 createVirtualService() {
     local serviceName="dbus-virtual-chain"
 
-    # Build chain list for virtual battery
-    local chainList=""
-    for i in $(seq 1 $chains); do
-        chainList="$chainList dbus-mqtt-chain${i}"
-    done
-
-    logMessage "Creating service: $serviceName (chains:$chainList)"
+    logMessage "Creating service: $serviceName (auto-discovering chain services on D-Bus)"
 
     mkdir -p "/var/log/$serviceName"
     mkdir -p "/service/$serviceName/log"
@@ -121,7 +115,7 @@ createVirtualService() {
 exec 2>&1
 cd /data/dbus-mqtt-battery
 sleep 5
-exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt --chains $chainList
+exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt
 EOF
     chmod +x "/service/$serviceName/run"
 
