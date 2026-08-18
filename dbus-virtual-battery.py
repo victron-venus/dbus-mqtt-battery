@@ -1,5 +1,4 @@
 #!/usr/bin/python3
-# -*- coding: utf-8 -*-
 """
 dbus-virtual-battery - Virtual Battery Calculator for Chain without BMS
 ========================================================================
@@ -28,11 +27,11 @@ Usage:
 
 from __future__ import annotations
 
-import sys
-import os
 import argparse
 import logging
-from time import time, sleep
+import os
+import sys
+from time import sleep, time
 
 # Add Victron library path
 sys.path.insert(
@@ -44,23 +43,22 @@ sys.path.insert(
 )
 
 import dbus
-
 from vedbus import VeDbusService
 
 # Import shared utilities from package
 from dbus_mqtt_battery import (
-    VERSION,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
+    PATH_DC_VOLTAGE,
     POLL_INTERVAL_MS,
-    get_bus,
-    setup_main_loop,
-    register_signal_handlers,
+    VERSION,
     create_poll_function,
+    get_bus,
+    register_signal_handlers,
     run_main_loop,
     setup_dbus_paths_common,
     setup_dbus_paths_dc,
-    PATH_DC_VOLTAGE,
-    PATH_DC_CURRENT,
-    PATH_DC_POWER,
+    setup_main_loop,
 )
 
 # Logging setup
@@ -106,8 +104,8 @@ class DbusReader:
             self.bus = get_bus()
             logger.debug("D-Bus connection established")
             return True
-        except Exception as e:
-            logger.exception("D-Bus connection failed: %s", e)
+        except Exception:
+            logger.exception("D-Bus connection failed")
             self.bus = None
             return False
 
@@ -170,9 +168,6 @@ class DbusReader:
                     self.bus = None
                 else:
                     logger.debug("D-Bus error reading %s%s: %s", service, path, e)
-            return None
-        except Exception as e:
-            logger.debug("Error reading %s%s: %s", service, path, e)
             return None
 
     def service_exists(self, service: str) -> bool:
@@ -316,6 +311,10 @@ class VirtualBatteryService:
             source.online = True
             source.last_seen = now
             return True
+        # If no data yet, check if service exists on D-Bus (service running but no MQTT data yet)
+        if self.dbus_reader.service_exists(source.service):
+            source.online = True  # Service exists = consider online
+            # Keep last_seen as 0 or previous value
         # Check if data is stale
         if source.online and (now - source.last_seen) > DATA_TIMEOUT:
             source.online = False

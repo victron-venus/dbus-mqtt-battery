@@ -48,9 +48,9 @@ echo "=============================================="
 echo "  D-Bus Values"
 echo "=============================================="
 ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2 virtual_chain; do
-  name=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep string | sed "s/.*\"\(.*\)\"/\1/")
-  soc=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep -E "double|int32" | awk "{print \$NF}")
-  current=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Dc/0/Current com.victronenergy.BusItem.GetValue 2>/dev/null | grep double | awk "{print \$NF}")
+  name=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep string | sed "s/.*\"\(.*\)\"/\1/")
+  soc=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep -E "double|int32" | awk "{print \$NF}")
+  current=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Dc/0/Current com.victronenergy.BusItem.GetValue 2>/dev/null | grep double | awk "{print \$NF}")
   if [ -n "$name" ]; then
     printf "%-25s SoC: %5s%%  Current: %6sA\n" "$name" "$soc" "$current"
   fi
