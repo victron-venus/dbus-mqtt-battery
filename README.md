@@ -40,6 +40,40 @@ This repository provides automated build archives for Victron Venus OS installat
 
 ---
 
+## Virtual Battery Auto-Discovery & Fallback
+
+The virtual battery (`dbus-virtual-battery`) now supports fully automatic configuration:
+
+### Auto-Discovery
+- **SmartShunt**: Auto-discovers from all `com.victronenergy.battery.*` services matching patterns (`ttyUSB*`, `ttyACM*`, `ve_bus`, `ve.can`, `smartshunt`, `shunt`). Use `--smartshunt-index N` to select which one if multiple found.
+- **Chains**: Auto-discovers ALL battery services on D-Bus, excluding:
+  - `virtual_chain` (itself)
+  - The selected SmartShunt
+
+### Fallback Logic
+| Scenario | Behavior |
+|----------|----------|
+| No chains found | Runs in passthrough mode (only SmartShunt data) |
+| Some chains offline | Uses only online chains for current subtraction; chain voltage averaged from available |
+| All chains offline | Falls back to SmartShunt voltage/current/SoC (no subtraction) |
+| SmartShunt offline | Shows disconnected, no virtual battery data published |
+
+### Manual Override
+All auto-discovery can be overridden via CLI:
+```bash
+# Full auto
+./dbus-virtual-battery.py
+
+# SmartShunt by index (if multiple)
+./dbus-virtual-battery.py --smartshunt-index 1
+
+# Manual SmartShunt, auto-discover chains
+./dbus-virtual-battery.py --smartshunt ttyUSB4
+
+# Fully manual
+./dbus-virtual-battery.py --smartshunt ttyUSB4 --chains mqtt_chain1 mqtt_chain2
+```
+
 ## System Architecture
 
 ```mermaid
@@ -139,8 +173,11 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
    # Batteries per chain (default: 4)
    echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries
 
-   # SmartShunt serial port for virtual battery (default: ttyUSB0)
-   echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
+   # SmartShunt serial port for virtual battery (optional, auto-discover by default)
+   # echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
+
+   # SmartShunt index if multiple found (default: 0 for first)
+   # echo "0" > /data/setupOptions/dbus-mqtt-battery/smartshuntIndex
 
    # Disable virtual battery if you don't have SmartShunt (enabled by default)
    echo "false" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
@@ -159,7 +196,13 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 | Batteries | `batteries` | `4` | Batteries per chain |
 | Cells/BMS | `cellsPerBms` | `4` | Cells per BMS module (4 for 12V LiFePO4) |
 | Virtual | `enableVirtual` | `true` | Enable virtual battery calculation |
-| SmartShunt | `smartshunt` | `ttyUSB0` | Serial port for SmartShunt |
+| SmartShunt | `smartshunt` | *(auto)* | Serial port for SmartShunt (auto-discover by default) |
+| SmartShunt Index | `smartshuntIndex` | `0` | Index of SmartShunt to use if multiple found |
+
+**Notes:**
+- `smartshunt` is now optional — auto-discovery runs by default
+- `smartshuntIndex` allows selecting Nth SmartShunt when multiple are present
+- Chain services are auto-discovered from ALL battery services on D-Bus (not just `mqtt_chain*`)
 
 **Examples:**
 - 1 chain, 4 batteries, no virtual: `chains=1`
@@ -203,10 +246,12 @@ chmod +x /data/dbus-mqtt-battery/setup
 
 # Configure (optional, before install)
 mkdir -p /data/setupOptions/dbus-mqtt-battery
-echo "2" > /data/setupOptions/dbus-mqtt-battery/chains        # Number of chains
-echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries     # Batteries per chain
-echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual  # Enable virtual battery
-echo "ttyUSB4" > /data/setupOptions/dbus-mqtt-battery/smartshunt  # SmartShunt port
+echo "2" > /data/setupOptions/dbus-mqtt-battery/chains           # Number of chains
+echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries        # Batteries per chain
+echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual # Enable virtual battery
+# SmartShunt auto-discovered by default; optional override:
+# echo "ttyUSB4" > /data/setupOptions/dbus-mqtt-battery/smartshunt      # Force specific SmartShunt
+# echo "0" > /data/setupOptions/dbus-mqtt-battery/smartshuntIndex       # Or pick index (0=first)
 
 # Install
 /data/dbus-mqtt-battery/setup install
