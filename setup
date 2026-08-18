@@ -51,6 +51,7 @@ readConfig() {
 createChainService() {
     local chainNum=$1
     local serviceName="dbus-mqtt-chain${chainNum}"
+    local dbusSuffix="mqtt_chain${chainNum}"
     local instance=$((511 + chainNum))
 
     # Topic prefix: chain1=battery, chain2=battery2, chain3=battery3, etc.
@@ -69,7 +70,7 @@ createChainService() {
     fi
     bmsFirst="--bms-first $bmsFirstIndex"
 
-    logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix)"
+    logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix, dbus suffix $dbusSuffix)"
 
     mkdir -p "/var/log/$serviceName"
     mkdir -p "/service/$serviceName/log"
@@ -86,7 +87,7 @@ exec python3 -u dbus-mqtt-battery.py \\
     --cells-per-bms $cellsPerBms \\
     --instance $instance \\
     --topic-prefix $topicPrefix \\
-    --service-suffix $serviceName \\
+    --service-suffix $dbusSuffix \\
     --product-name "JBD Battery Chain $chainNum" $bmsFirst
 EOF
     chmod +x "/service/$serviceName/run"
