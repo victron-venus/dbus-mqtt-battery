@@ -70,13 +70,16 @@ createChainService() {
     fi
     bmsFirst="--bms-first $bmsFirstIndex"
 
+    # Service stored in /data (persists across reboots), symlinked to /service
+    local serviceDataDir="/data/dbus-mqtt-battery/service/$serviceName"
+
     logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix, dbus suffix $dbusSuffix)"
 
     mkdir -p "/var/log/$serviceName"
-    mkdir -p "/service/$serviceName/log"
+    mkdir -p "$serviceDataDir/log"
 
     # Main run script
-    cat > "/service/$serviceName/run" << EOF
+    cat > "$serviceDataDir/run" << EOF
 #!/bin/sh
 exec 2>&1
 cd /data/dbus-mqtt-battery
@@ -90,75 +93,84 @@ exec python3 -u dbus-mqtt-battery.py \\
     --service-suffix $dbusSuffix \\
     --product-name "JBD Battery Chain $chainNum" $bmsFirst
 EOF
-    chmod +x "/service/$serviceName/run"
+    chmod +x "$serviceDataDir/run"
 
     # Log run script (use multilog, not svlogd - Venus OS standard)
-    cat > "/service/$serviceName/log/run" << EOF
+    cat > "$serviceDataDir/log/run" << EOF
 #!/bin/sh
 exec 2>&1
 exec multilog t s25000 n4 /var/log/$serviceName
 EOF
-    chmod +x "/service/$serviceName/log/run"
+    chmod +x "$serviceDataDir/log/run"
+
+    # Create /service symlink
+    ln -sf "$serviceDataDir" "/service/$serviceName"
 }
 
 # Create virtual battery service
 createVirtualService() {
     local serviceName="dbus-virtual-chain"
+    local serviceDataDir="/data/dbus-mqtt-battery/service/$serviceName"
 
     logMessage "Creating service: $serviceName (auto-discovering chain services on D-Bus)"
 
     mkdir -p "/var/log/$serviceName"
-    mkdir -p "/service/$serviceName/log"
+    mkdir -p "$serviceDataDir/log"
 
     # Main run script
-    cat > "/service/$serviceName/run" << EOF
+    cat > "$serviceDataDir/run" << EOF
 #!/bin/sh
 exec 2>&1
 cd /data/dbus-mqtt-battery
 sleep 5
 exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt
 EOF
-    chmod +x "/service/$serviceName/run"
+    chmod +x "$serviceDataDir/run"
 
     # Log run script (use multilog, not svlogd - Venus OS standard)
-    cat > "/service/$serviceName/log/run" << EOF
+    cat > "$serviceDataDir/log/run" << EOF
 #!/bin/sh
 exec 2>&1
 exec multilog t s25000 n4 /var/log/$serviceName
 EOF
-    chmod +x "/service/$serviceName/log/run"
+    chmod +x "$serviceDataDir/log/run"
+
+    # Create /service symlink
+    ln -sf "$serviceDataDir" "/service/$serviceName"
 }
 
 # Function to set up firmware update persistence
 setupFirmwarePersistence() {
     logMessage "Setting up Venus OS firmware update persistence..."
 
-    # Add rc.local entry to restart services on boot
+    # Add rc.local entry to recreate symlinks and start services on boot
     RC_LOCAL="/data/rc.local"
     if [ ! -f "$RC_LOCAL" ]; then
         echo "#!/bin/sh" > "$RC_LOCAL"
         chmod +x "$RC_LOCAL"
     fi
 
-    if ! grep -q "dbus-mqtt-chain1" "$RC_LOCAL" 2>/dev/null; then
+    if ! grep -q "dbus-mqtt-battery service persistence" "$RC_LOCAL" 2>/dev/null; then
         cat >> "$RC_LOCAL" << 'EOF'
 
 # === dbus-mqtt-battery service persistence ===
-# Restart services after Venus OS firmware update
-if [ -d /service/dbus-mqtt-chain1 ]; then
-    svcadm restart dbus-mqtt-chain1 2>/dev/null || svc -u /service/dbus-mqtt-chain1
-fi
-if [ -d /service/dbus-mqtt-chain2 ]; then
-    svcadm restart dbus-mqtt-chain2 2>/dev/null || svc -u /service/dbus-mqtt-chain2
-fi
-if [ -d /service/dbus-virtual-chain ]; then
-    svcadm restart dbus-virtual-chain 2>/dev/null || svc -u /service/dbus-virtual-chain
-fi
+# Recreate /service symlinks on boot (lost since /service is tmpfs)
+ln -sf /data/dbus-mqtt-battery/service/dbus-mqtt-chain1 /service/dbus-mqtt-chain1
+ln -sf /data/dbus-mqtt-battery/service/dbus-mqtt-chain2 /service/dbus-mqtt-chain2
+ln -sf /data/dbus-mqtt-battery/service/dbus-virtual-chain /service/dbus-virtual-chain
+sleep 3
+svc -u /service/dbus-mqtt-chain1/log 2>/dev/null || true
+svc -u /service/dbus-mqtt-chain1 2>/dev/null || true
+svc -u /service/dbus-mqtt-chain2/log 2>/dev/null || true
+svc -u /service/dbus-mqtt-chain2 2>/dev/null || true
+svc -u /service/dbus-virtual-chain/log 2>/dev/null || true
+svc -u /service/dbus-virtual-chain 2>/dev/null || true
 # === end dbus-mqtt-battery ===
 
 EOF
-        logMessage "Added service restart commands to $RC_LOCAL"
+        logMessage "Added boot persistence to $RC_LOCAL"
     else
+        # Update existing entry to recreate symlinks
         logMessage "Service persistence already configured in $RC_LOCAL"
     fi
 
@@ -181,6 +193,12 @@ removeServices() {
         svc -d "/service/dbus-virtual-chain" 2>/dev/null
         rm -rf "/service/dbus-virtual-chain"
         logMessage "Removed dbus-virtual-chain"
+    fi
+
+    # Also remove service directories from /data (persistent storage)
+    if [ -d "/data/dbus-mqtt-battery/service" ]; then
+        rm -rf /data/dbus-mqtt-battery/service/dbus-mqtt-chain* /data/dbus-mqtt-battery/service/dbus-virtual-chain 2>/dev/null || true
+        logMessage "Removed service directories from /data"
     fi
 }
 
