@@ -46,6 +46,19 @@ DEFAULT_SERVICE_SUFFIX = "mqtt_chain"
 DEFAULT_PRODUCT_NAME = "JBD Battery Chain"
 DEFAULT_TOPIC_PREFIX = "battery"
 
+# Alarm thresholds
+DEFAULT_ALARM_LOW_SOC = 10  # % - Low state of charge warning
+DEFAULT_ALARM_LOW_SOC_CRITICAL = 5  # % - Critical low SoC
+DEFAULT_ALARM_LOW_CELL_VOLTAGE = 2.9  # V - Low cell voltage warning
+DEFAULT_ALARM_LOW_CELL_CRITICAL = 2.7  # V - Critical low cell voltage
+DEFAULT_ALARM_HIGH_CELL_VOLTAGE = 3.55  # V - High cell voltage warning
+DEFAULT_ALARM_HIGH_CELL_CRITICAL = 3.65  # V - Critical high cell voltage
+DEFAULT_ALARM_CELL_IMBALANCE = 0.1  # V - Cell imbalance warning
+DEFAULT_ALARM_HIGH_TEMP = 45  # °C - High temperature warning
+DEFAULT_ALARM_HIGH_TEMP_CRITICAL = 55  # °C - Critical high temperature
+DEFAULT_ALARM_LOW_TEMP = 0  # °C - Low temperature warning
+DEFAULT_ALARM_LOW_TEMP_CRITICAL = -10  # °C - Critical low temperature
+
 # Poll interval (milliseconds)
 POLL_INTERVAL_MS = 2000
 
@@ -83,6 +96,17 @@ class BatteryConfig:
     capacity: float = DEFAULT_INSTALLED_CAPACITY
     cells_per_bms: int = DEFAULT_CELLS_PER_BMS
     bms_first: int = DEFAULT_BMS_FIRST
+    alarm_low_soc: int = DEFAULT_ALARM_LOW_SOC
+    alarm_low_soc_critical: int = DEFAULT_ALARM_LOW_SOC_CRITICAL
+    alarm_low_cell_voltage: float = DEFAULT_ALARM_LOW_CELL_VOLTAGE
+    alarm_low_cell_critical: float = DEFAULT_ALARM_LOW_CELL_CRITICAL
+    alarm_high_cell_voltage: float = DEFAULT_ALARM_HIGH_CELL_VOLTAGE
+    alarm_high_cell_critical: float = DEFAULT_ALARM_HIGH_CELL_CRITICAL
+    alarm_cell_imbalance: float = DEFAULT_ALARM_CELL_IMBALANCE
+    alarm_high_temp: int = DEFAULT_ALARM_HIGH_TEMP
+    alarm_high_temp_critical: int = DEFAULT_ALARM_HIGH_TEMP_CRITICAL
+    alarm_low_temp: int = DEFAULT_ALARM_LOW_TEMP
+    alarm_low_temp_critical: int = DEFAULT_ALARM_LOW_TEMP_CRITICAL
 
 
 @dataclass
@@ -124,6 +148,39 @@ class Config:
                 "battery", "cells_per_bms", fallback=battery.cells_per_bms
             )
             battery.bms_first = config.getint("battery", "bms_first", fallback=battery.bms_first)
+            battery.alarm_low_soc = config.getint(
+                "battery", "alarm_low_soc", fallback=battery.alarm_low_soc
+            )
+            battery.alarm_low_soc_critical = config.getint(
+                "battery", "alarm_low_soc_critical", fallback=battery.alarm_low_soc_critical
+            )
+            battery.alarm_low_cell_voltage = config.getfloat(
+                "battery", "alarm_low_cell_voltage", fallback=battery.alarm_low_cell_voltage
+            )
+            battery.alarm_low_cell_critical = config.getfloat(
+                "battery", "alarm_low_cell_critical", fallback=battery.alarm_low_cell_critical
+            )
+            battery.alarm_high_cell_voltage = config.getfloat(
+                "battery", "alarm_high_cell_voltage", fallback=battery.alarm_high_cell_voltage
+            )
+            battery.alarm_high_cell_critical = config.getfloat(
+                "battery", "alarm_high_cell_critical", fallback=battery.alarm_high_cell_critical
+            )
+            battery.alarm_cell_imbalance = config.getfloat(
+                "battery", "alarm_cell_imbalance", fallback=battery.alarm_cell_imbalance
+            )
+            battery.alarm_high_temp = config.getint(
+                "battery", "alarm_high_temp", fallback=battery.alarm_high_temp
+            )
+            battery.alarm_high_temp_critical = config.getint(
+                "battery", "alarm_high_temp_critical", fallback=battery.alarm_high_temp_critical
+            )
+            battery.alarm_low_temp = config.getint(
+                "battery", "alarm_low_temp", fallback=battery.alarm_low_temp
+            )
+            battery.alarm_low_temp_critical = config.getint(
+                "battery", "alarm_low_temp_critical", fallback=battery.alarm_low_temp_critical
+            )
 
         if "dbus" in config:
             dbus.instance = config.getint("dbus", "instance", fallback=dbus.instance)
@@ -195,6 +252,72 @@ def create_argument_parser() -> argparse.ArgumentParser:
         default=argparse.SUPPRESS,
         help="First MQTT BMS index for this chain (default: 1)",
     )
+    battery_group.add_argument(
+        "--alarm-low-soc",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Low state of charge warning threshold in percent (default: 10)",
+    )
+    battery_group.add_argument(
+        "--alarm-low-soc-critical",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Critical low state of charge threshold in percent (default: 5)",
+    )
+    battery_group.add_argument(
+        "--alarm-low-cell-voltage",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Low cell voltage warning threshold in volts (default: 2.9)",
+    )
+    battery_group.add_argument(
+        "--alarm-low-cell-critical",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Critical low cell voltage threshold in volts (default: 2.7)",
+    )
+    battery_group.add_argument(
+        "--alarm-high-cell-voltage",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="High cell voltage warning threshold in volts (default: 3.55)",
+    )
+    battery_group.add_argument(
+        "--alarm-high-cell-critical",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Critical high cell voltage threshold in volts (default: 3.65)",
+    )
+    battery_group.add_argument(
+        "--alarm-cell-imbalance",
+        type=float,
+        default=argparse.SUPPRESS,
+        help="Cell imbalance warning threshold in volts (default: 0.1)",
+    )
+    battery_group.add_argument(
+        "--alarm-high-temp",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="High temperature warning threshold in Celsius (default: 45)",
+    )
+    battery_group.add_argument(
+        "--alarm-high-temp-critical",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Critical high temperature threshold in Celsius (default: 55)",
+    )
+    battery_group.add_argument(
+        "--alarm-low-temp",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Low temperature warning threshold in Celsius (default: 0)",
+    )
+    battery_group.add_argument(
+        "--alarm-low-temp-critical",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Critical low temperature threshold in Celsius (default: -10)",
+    )
 
     # D-Bus settings
     dbus_group = parser.add_argument_group("D-Bus settings")
@@ -237,6 +360,28 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
         config.battery.cells_per_bms = args.cells_per_bms
     if hasattr(args, "bms_first"):
         config.battery.bms_first = args.bms_first
+    if hasattr(args, "alarm_low_soc"):
+        config.battery.alarm_low_soc = args.alarm_low_soc
+    if hasattr(args, "alarm_low_soc_critical"):
+        config.battery.alarm_low_soc_critical = args.alarm_low_soc_critical
+    if hasattr(args, "alarm_low_cell_voltage"):
+        config.battery.alarm_low_cell_voltage = args.alarm_low_cell_voltage
+    if hasattr(args, "alarm_low_cell_critical"):
+        config.battery.alarm_low_cell_critical = args.alarm_low_cell_critical
+    if hasattr(args, "alarm_high_cell_voltage"):
+        config.battery.alarm_high_cell_voltage = args.alarm_high_cell_voltage
+    if hasattr(args, "alarm_high_cell_critical"):
+        config.battery.alarm_high_cell_critical = args.alarm_high_cell_critical
+    if hasattr(args, "alarm_cell_imbalance"):
+        config.battery.alarm_cell_imbalance = args.alarm_cell_imbalance
+    if hasattr(args, "alarm_high_temp"):
+        config.battery.alarm_high_temp = args.alarm_high_temp
+    if hasattr(args, "alarm_high_temp_critical"):
+        config.battery.alarm_high_temp_critical = args.alarm_high_temp_critical
+    if hasattr(args, "alarm_low_temp"):
+        config.battery.alarm_low_temp = args.alarm_low_temp
+    if hasattr(args, "alarm_low_temp_critical"):
+        config.battery.alarm_low_temp_critical = args.alarm_low_temp_critical
 
     # D-Bus overrides
     if hasattr(args, "instance"):

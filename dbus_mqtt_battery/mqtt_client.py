@@ -69,6 +69,8 @@ class MqttBatteryClient:
         # Track if ESP publishes current_total (some ESPHome configs don't)
         self.current_total_seen: bool = False
         self.soc_total_seen: bool = False
+        # Timestamp of last MQTT message received (any topic) for staleness alarms
+        self.last_message_time: float = 0.0
 
         # MQTT client (handle both paho-mqtt v1 and v2)
         client_id = f"dbus-mqtt-battery-{int(time())}"
@@ -122,6 +124,7 @@ class MqttBatteryClient:
 
     def _on_message(self, client: Any, userdata: Any, msg: Any) -> None:
         """MQTT message callback."""
+        self.last_message_time = time()
         try:
             topic = msg.topic
             payload = msg.payload.decode("utf-8").strip()
