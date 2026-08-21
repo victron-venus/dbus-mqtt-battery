@@ -24,7 +24,6 @@ jobs:
         ARCHIVE="${PKG_NAME}-${GITHUB_REF#refs/tags/}.tar.gz"
         mkdir -p "${PKG_NAME}"
         cp dbus-mqtt-battery.py "${PKG_NAME}/"
-        cp dbus-virtual-battery.py "${PKG_NAME}/" 2>/dev/null || true
         cp setup gitHubInfo version "${PKG_NAME}/" 2>/dev/null || true
         tar -czf "$ARCHIVE" "${PKG_NAME}/"
         echo "ARCHIVE=$ARCHIVE" >> $GITHUB_OUTPUT

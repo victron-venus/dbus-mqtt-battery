@@ -40,154 +40,6 @@ This repository provides automated build archives for Victron Venus OS installat
 
 ---
 
-## Virtual Battery Auto-Discovery & Fallback
-
-The virtual battery (`dbus-virtual-battery`) now supports fully automatic configuration:
-
-### Auto-Discovery
-- **SmartShunt**: Auto-discovers from all `com.victronenergy.battery.*` services matching patterns (`ttyUSB*`, `ttyACM*`, `ve_bus`, `ve.can`, `smartshunt`, `shunt`). Use `--smartshunt-index N` to select which one if multiple found.
-- **Chains**: Auto-discovers ALL battery services on D-Bus, excluding:
-  - `virtual_chain` (itself)
-  - The selected SmartShunt
-
-### Fallback Logic
-| Scenario | Behavior |
-|----------|----------|
-| No chains found | Runs in passthrough mode (only SmartShunt data) |
-| Some chains offline | Uses only online chains for current subtraction; chain voltage averaged from available |
-| All chains offline | Falls back to SmartShunt voltage/current/SoC (no subtraction) |
-| SmartShunt offline | Shows disconnected, no virtual battery data published |
-
-### Manual Override
-All auto-discovery can be overridden via CLI:
-```bash
-# Full auto
-./dbus-virtual-battery.py
-
-# SmartShunt by index (if multiple)
-./dbus-virtual-battery.py --smartshunt-index 1
-
-# Manual SmartShunt, auto-discover chains
-./dbus-virtual-battery.py --smartshunt ttyUSB4
-
-# Fully manual
-./dbus-virtual-battery.py --smartshunt ttyUSB4 --chains mqtt_chain1 mqtt_chain2
-```
-
-## System Architecture
-
-```mermaid
-flowchart TB
-    subgraph Chain1["Chain 1: 4x JBD BMS"]
-        BMS1_1["BMS 1"]
-        BMS1_2["BMS 2"]
-        BMS1_3["BMS 3"]
-        BMS1_4["BMS 4"]
-    end
-
-    subgraph Chain2["Chain 2: 4x JBD BMS"]
-        BMS2_1["BMS 1"]
-        BMS2_2["BMS 2"]
-        BMS2_3["BMS 3"]
-        BMS2_4["BMS 4"]
-    end
-
-    subgraph Venus["Venus OS (Cerbo GX)"]
-        ESP1["ESP32 #1\nBLE → MQTT"]
-        ESP2["ESP32 #2\nBLE → MQTT"]
-        DMB1["dbus-mqtt-battery\n(topic: battery)"]
-        DMB2["dbus-mqtt-battery\n(topic: battery2)"]
-        VBT["dbus-virtual-battery"]
-        DBUS["D-Bus"]
-        GUI["Victron GUI v2"]
-    end
-
-    subgraph Shunt["SmartShunt"]
-        SS["SmartShunt\n VE.Direct"]
-    end
-
-    Chain1 -->|"BLE"| ESP1
-    ESP1 -->|"battery/*"| DMB1
-    DMB1 -->|"mqtt_chain1"| DBUS
-
-    Chain2 -->|"BLE"| ESP2
-    ESP2 -->|"battery2/*"| DMB2
-    DMB2 -->|"mqtt_chain2"| DBUS
-
-    SS -->|"ttyUSB"| VBT
-    VBT -->|"virtual_chain"| DBUS
-
-    DBUS --> GUI
-
-    style DMB1 fill:#4ecdc4,color:#fff
-    style DMB2 fill:#4ecdc4,color:#fff
-    style VBT fill:#9b59b6,color:#fff
-    style ESP1 fill:#e67e22,color:#fff
-    style ESP2 fill:#e67e22,color:#fff
-```
-
-## Services
-
-Services are created dynamically based on configuration:
-
-| Service | D-Bus Name | MQTT Topic | Description |
-|---------|------------|------------|-------------|
-| Chain 1 | `com.victronenergy.battery.mqtt_chain1` | `battery/` | First battery chain |
-| Chain 2 | `com.victronenergy.battery.mqtt_chain2` | `battery2/` | Second battery chain |
-| Chain N | `com.victronenergy.battery.mqtt_chainN` | `batteryN/` | Nth battery chain |
-| Virtual | `com.victronenergy.battery.virtual_chain` | — | SmartShunt minus all chains (optional) |
-
-## Installation
-
-### Option 1: SetupHelper (Recommended)
-
-The easiest way to install is via [SetupHelper](https://github.com/kwindrem/SetupHelper) PackageManager:
-
-1. **Install SetupHelper** (if not already installed):
-   ```bash
-   wget -qO - https://github.com/kwindrem/SetupHelper/archive/latest.tar.gz | tar -xzf - -C /data
-   mv /data/SetupHelper-latest /data/SetupHelper
-   /data/SetupHelper/setup
-   ```
-
-2. **Add package via GUI**:
-   - Settings → PackageManager → Inactive packages → **new**
-   - Package name: `dbus-mqtt-battery`
-   - GitHub user: `victron-venus`
-   - Branch/tag: `latest`
-   - Proceed → Download → Install
-
-3. **Done!** The package will:
-   - Automatically reinstall after Venus OS updates
-   - Update from GitHub when new versions are available
-   - Provide GUI controls via PackageManager
-
-4. **Configure** (optional, create files before or after install):
-   ```bash
-   ssh Cerbo
-   mkdir -p /data/setupOptions/dbus-mqtt-battery
-
-   # Number of battery chains (default: 2)
-   echo "2" > /data/setupOptions/dbus-mqtt-battery/chains
-
-   # Batteries per chain (default: 4)
-   echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries
-
-   # SmartShunt serial port for virtual battery (optional, auto-discover by default)
-   # echo "ttyUSB0" > /data/setupOptions/dbus-mqtt-battery/smartshunt
-
-   # SmartShunt index if multiple found (default: 0 for first)
-   # echo "0" > /data/setupOptions/dbus-mqtt-battery/smartshuntIndex
-
-   # Disable virtual battery if you don't have SmartShunt (enabled by default)
-   echo "false" > /data/setupOptions/dbus-mqtt-battery/enableVirtual
-   ```
-
-   > **Note**: Virtual battery is **enabled by default**. If you don't have a SmartShunt or don't need virtual battery calculation, disable it **before** installation by setting `enableVirtual` to `false`.
-
-5. **Reinstall** to apply configuration changes:
-   - PackageManager → dbus-mqtt-battery → Reinstall
-
 ### Configuration Options
 
 | Option | File | Default | Description |
@@ -195,18 +47,13 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 | Chains | `chains` | `2` | Number of battery chains (1-10) |
 | Batteries | `batteries` | `4` | Batteries per chain |
 | Cells/BMS | `cellsPerBms` | `4` | Cells per BMS module (4 for 12V LiFePO4) |
-| Virtual | `enableVirtual` | `true` | Enable virtual battery calculation |
-| SmartShunt | `smartshunt` | *(auto)* | Serial port for SmartShunt (auto-discover by default) |
-| SmartShunt Index | `smartshuntIndex` | `0` | Index of SmartShunt to use if multiple found |
 
 **Notes:**
-- `smartshunt` is now optional — auto-discovery runs by default
-- `smartshuntIndex` allows selecting Nth SmartShunt when multiple are present
 - Chain services are auto-discovered from ALL battery services on D-Bus (not just `mqtt_chain*`)
 
 **Examples:**
-- 1 chain, 4 batteries, no virtual: `chains=1`
-- 2 chains, 4 batteries each, with virtual: `chains=2`, `enableVirtual=true`
+- 1 chain, 4 batteries: `chains=1`
+- 2 chains, 4 batteries each: `chains=2`, `batteries=4`
 - 5 chains, 8 batteries each: `chains=5`, `batteries=8`
 
 ### How PackageManager Works
@@ -214,14 +61,12 @@ The easiest way to install is via [SetupHelper](https://github.com/kwindrem/Setu
 PackageManager discovers packages by scanning `/data/` for directories containing both a `version` file and a `setup` script. The `setup` script (sourced from this repo) is executed with the `INSTALL` action by SetupHelper, which:
 
 - Creates chain services (`dbus-mqtt-chain1`, `dbus-mqtt-chain2`, etc.) based on configuration
-- Creates virtual battery service (`dbus-virtual-chain`) if enabled
 - Copies Python scripts to `/data/dbus-mqtt-battery/`
 
 The `gitHubInfo` file tells PackageManager where to download from:
 ```
 victron-venus:latest
 ```
-
 ### Uninstall
 
 Via PackageManager: Settings → PackageManager → dbus-mqtt-battery → Uninstall
@@ -248,10 +93,6 @@ chmod +x /data/dbus-mqtt-battery/setup
 mkdir -p /data/setupOptions/dbus-mqtt-battery
 echo "2" > /data/setupOptions/dbus-mqtt-battery/chains           # Number of chains
 echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries        # Batteries per chain
-echo "true" > /data/setupOptions/dbus-mqtt-battery/enableVirtual # Enable virtual battery
-# SmartShunt auto-discovered by default; optional override:
-# echo "ttyUSB4" > /data/setupOptions/dbus-mqtt-battery/smartshunt      # Force specific SmartShunt
-# echo "0" > /data/setupOptions/dbus-mqtt-battery/smartshuntIndex       # Or pick index (0=first)
 
 # Install
 /data/dbus-mqtt-battery/setup install
@@ -283,7 +124,7 @@ This project is part of the Victron Venus OS integration suite:
 |---------|-------------|
 | [inverter-control](https://github.com/victron-venus/inverter-control) | Advanced ESS external control system with grid-zero targeting |
 | [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) | Real-time web dashboard (Python/FastAPI) via MQTT |
-| [inverter-dashboard-go](https://github.com/victron-venues/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
+| [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
 | [inverter-desktop](https://github.com/victron-venus/inverter-desktop) | Native desktop application (Rust/Tauri) for system monitoring |
 | **dbus-mqtt-battery** (this) | MQTT to D-Bus bridge for JBD BMS battery integration |
 | [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug integration as a PV inverter on D-Bus |
