@@ -12,8 +12,10 @@ import logging
 import os
 import signal
 import sys
+import threading
+from collections.abc import Callable
 from time import time
-from typing import Any, Callable
+from typing import Any
 
 import dbus
 
@@ -30,6 +32,110 @@ logger = logging.getLogger("MqttBattery")
 PATH_DC_VOLTAGE = "/Dc/0/Voltage"
 PATH_DC_CURRENT = "/Dc/0/Current"
 PATH_DC_POWER = "/Dc/0/Power"
+
+# Circuit breaker defaults
+CALL_TIMEOUT_S = 10.0  # Max seconds a single service.update() may take
+BREAKER_FAILURE_THRESHOLD = 3  # Consecutive timeouts before the breaker opens
+BREAKER_COOLDOWN_S = 60.0  # Seconds the breaker stays open before a retry
+
+
+class CircuitBreaker:
+    """Guard against a hung update call blocking the main loop.
+
+    If the data source (MQTT broker, D-Bus daemon) hangs, a single
+    service.update() call can block forever and stall the whole service.
+    The breaker bounds each call with a SIGALRM timeout and stops calling
+    it once it times out repeatedly:
+
+        closed    - calls pass through under a timeout
+        open      - calls are skipped until the cooldown expires
+        half-open - one probe call; success closes, timeout reopens
+    """
+
+    def __init__(
+        self,
+        name: str,
+        call_timeout_s: float = CALL_TIMEOUT_S,
+        failure_threshold: int = BREAKER_FAILURE_THRESHOLD,
+        cooldown_s: float = BREAKER_COOLDOWN_S,
+    ) -> None:
+        self.name = name
+        self.call_timeout_s = call_timeout_s
+        self.failure_threshold = failure_threshold
+        self.cooldown_s = cooldown_s
+        self.consecutive_failures = 0
+        self.opened_at = 0.0
+
+    @property
+    def state(self) -> str:
+        """Current breaker state: closed, open or half-open."""
+        if self.consecutive_failures < self.failure_threshold:
+            return "closed"
+        return "open" if (time() - self.opened_at) < self.cooldown_s else "half-open"
+
+    def _on_timeout(self, signum: int, frame: Any) -> None:
+        """SIGALRM handler that aborts the guarded call."""
+        raise TimeoutError(f"{self.name} did not finish within {self.call_timeout_s}s")
+
+    def _record_failure(self, exc: TimeoutError) -> None:
+        self.consecutive_failures += 1
+        if self.consecutive_failures >= self.failure_threshold:
+            self.opened_at = time()
+            logger.error(
+                "Circuit breaker OPEN for %s after %d consecutive timeouts (%s); retrying in %.0fs",
+                self.name,
+                self.consecutive_failures,
+                exc,
+                self.cooldown_s,
+            )
+        else:
+            logger.error(
+                "Circuit breaker timeout %d/%d for %s: %s",
+                self.consecutive_failures,
+                self.failure_threshold,
+                self.name,
+                exc,
+            )
+
+    def call(self, fn: Callable[[], Any]) -> bool:
+        """Run fn() guarded by the breaker.
+
+        Returns True if fn ran, False if the open breaker skipped it.
+        Non-timeout exceptions propagate to the caller.
+        """
+        if self.state == "open":
+            logger.debug("Circuit breaker OPEN for %s, skipping call", self.name)
+            return False
+
+        # setitimer only works in the main thread; degrade to an unguarded
+        # call elsewhere (tests run guarded, GLib poll runs in main thread).
+        guarded = threading.current_thread() is threading.main_thread()
+        old_handler = None
+        if guarded:
+            try:
+                old_handler = signal.signal(signal.SIGALRM, self._on_timeout)
+                signal.setitimer(signal.ITIMER_REAL, self.call_timeout_s)
+            except (OSError, ValueError):
+                if old_handler is not None:
+                    signal.signal(signal.SIGALRM, old_handler)
+                    old_handler = None
+                guarded = False
+
+        try:
+            fn()
+        except TimeoutError as e:
+            self._record_failure(e)
+            return False
+        finally:
+            if guarded:
+                signal.setitimer(signal.ITIMER_REAL, 0)
+                if old_handler is not None:
+                    signal.signal(signal.SIGALRM, old_handler)
+
+        if self.consecutive_failures:
+            logger.info("%s recovered after %d timeout(s)", self.name, self.consecutive_failures)
+            self.consecutive_failures = 0
+        return True
 
 
 def get_bus() -> dbus.Bus:
@@ -79,6 +185,7 @@ def create_poll_function(
     service: Any,
     heartbeat_file: str | None = None,
     gc_interval: int = 150,
+    breaker: CircuitBreaker | None = None,
 ) -> Callable[[], bool]:
     """
     Create a periodic poll function with garbage collection.
@@ -87,18 +194,21 @@ def create_poll_function(
         service: Service object with an update() method
         heartbeat_file: Optional path to heartbeat file for watchdog
         gc_interval: How often to run GC (in poll cycles)
+        breaker: Optional circuit breaker guarding the update call
 
     Returns:
         Poll function that returns True to continue
     """
     gc_counter = 0
+    if breaker is None:
+        breaker = CircuitBreaker(type(service).__name__)
 
     def poll() -> bool:
         nonlocal gc_counter
         try:
-            service.update()
-        except Exception as e:
-            logger.exception("Error in poll: %s", e)
+            breaker.call(service.update)
+        except Exception:
+            logger.exception("Error in poll")
 
         # Periodic garbage collection for memory-constrained Venus OS
         gc_counter += 1
@@ -229,6 +339,7 @@ def setup_dbus_paths_alarms(dbusservice: Any) -> None:
         dbusservice: VeDbusService instance
     """
     for alarm in [
+        "CommunicationError",
         "LowVoltage",
         "HighVoltage",
         "LowCellVoltage",

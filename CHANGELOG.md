@@ -5,12 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Circuit breaker around the poll loop: a hung `service.update()` call is bounded by a 10s SIGALRM timeout; after 3 consecutive timeouts the breaker opens for 60s before retrying (half-open)
+- `/Alarms/CommunicationError` (0=OK, 2=alarm) and `/System/StaleData` now reflect MQTT data freshness — set when no MQTT message arrives for more than `STALE_TIMEOUT` (60s) or when no battery data is valid
+
+### Fixed
+- Export missing `PATH_DC_VOLTAGE`, `PATH_DC_CURRENT`, `PATH_DC_POWER` and `load_config` from `dbus_mqtt_battery` package (`__init__`) — main script previously failed on import
+
 ## [2.7.0] - 2026-04-04
 
 ### Added
 - Dynamic chain configuration via setupOptions
 - Configurable number of battery chains (1-10)
-- Optional virtual battery (SmartShunt minus chains)
 - Setup script generates services dynamically
 
 ### Changed
@@ -52,7 +60,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - MQTT auto-reconnect with exponential backoff
 - Graceful shutdown handling (SIGTERM, SIGINT)
 - Periodic garbage collection
-- D-Bus reconnection logic in virtual battery
 
 ### Changed
 - Improved 24/7 reliability
@@ -61,7 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.4.0] - 2026-03-27
 
 ### Added
-- Virtual battery calculator (dbus-virtual-battery.py)
 - Support for multiple battery chains
 - SmartShunt integration for Chain 3
 
