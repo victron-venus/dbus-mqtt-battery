@@ -21,7 +21,6 @@ flowchart TB
         MQTT["MQTT Broker"]
         DMB1["dbus-mqtt-battery\n(topic: battery)"]
         DMB2["dbus-mqtt-battery\n(topic: battery2)"]
-        VBT["dbus-virtual-battery"]
         DBUS["D-Bus"]
         CALC["systemcalc-py"]
     end
@@ -36,7 +35,6 @@ flowchart TB
 
     style DMB1 fill:#4ecdc4,color:#fff
     style DMB2 fill:#4ecdc4,color:#fff
-    style VBT fill:#9b59b6,color:#fff
     style CALC fill:#f39c12,color:#fff
 ```
 
