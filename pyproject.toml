@@ -1,3 +1,10 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["dbus_mqtt_battery*"]
+
 [tool.pylint.messages_control]
 ignore-paths = ["^.venv/"]
 # Venus OS specific patterns - expected due to framework constraints
