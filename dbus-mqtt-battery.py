@@ -25,7 +25,6 @@ Usage:
 
 from __future__ import annotations
 
-import argparse
 import logging
 import os
 import sys
@@ -50,10 +49,13 @@ from dbus_mqtt_battery import (
     PATH_DC_POWER,
     PATH_DC_VOLTAGE,
     POLL_INTERVAL_MS,
+    STALE_TIMEOUT,
     VERSION,
+    Config,
     MqttBatteryClient,
     create_poll_function,
     get_bus,
+    load_config,
     register_signal_handlers,
     run_main_loop,
     setup_dbus_paths_alarms,
@@ -82,18 +84,6 @@ logger = logging.getLogger("MqttBattery")
 DEFAULT_MQTT_BROKER = "localhost"
 DEFAULT_MQTT_PORT = 1883
 
-# Alarm thresholds (adjust for your battery type)
-ALARM_LOW_SOC = 10  # % - Low state of charge warning
-ALARM_LOW_SOC_CRITICAL = 5  # % - Critical low SoC
-ALARM_LOW_CELL_VOLTAGE = 2.9  # V - Low cell voltage warning
-ALARM_LOW_CELL_CRITICAL = 2.7  # V - Critical low cell voltage
-ALARM_HIGH_CELL_VOLTAGE = 3.55  # V - High cell voltage warning
-ALARM_HIGH_CELL_CRITICAL = 3.65  # V - Critical high cell voltage
-ALARM_CELL_IMBALANCE = 0.1  # V - Cell imbalance warning
-ALARM_HIGH_TEMP = 45  # °C - High temperature warning
-ALARM_HIGH_TEMP_CRITICAL = 55  # °C - Critical high temperature
-ALARM_LOW_TEMP = 0  # °C - Low temperature warning
-ALARM_LOW_TEMP_CRITICAL = -10  # °C - Critical low temperature
 
 # Alias for backward compatibility
 CELLS_PER_BMS = DVCC_CELLS_PER_BMS
@@ -113,16 +103,19 @@ class DbusAggregateService:
         device_instance: int = 512,
         service_suffix: str = "mqtt_chain",
         product_name: str = "JBD Battery Chain",
+        config: Config = None,
     ):
         self.mqtt = mqtt_client
         self.device_instance = device_instance
         self.product_name = product_name
+        self.config = config if config is not None else Config()
 
         # Initialize DVCC controller for dynamic current limiting
         total_cells = mqtt_client.battery_count * mqtt_client.cells_per_bms
         self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
         self.last_dvcc_log = 0
+        self._comm_alarm_active = False  # For log-on-transition of CommunicationError
 
         service_name = f"com.victronenergy.battery.{service_suffix}"
         self._dbusservice = VeDbusService(service_name, get_bus(), register=False)
@@ -305,14 +298,29 @@ class DbusAggregateService:
         # Reliability: stale data indicator (0=fresh, 1=stale)
         self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
 
+    def _set_communication_error(self, stale: bool) -> None:
+        """Update /Alarms/CommunicationError and /System/StaleData from MQTT freshness."""
+        self._dbusservice["/Alarms/CommunicationError"] = 2 if stale else 0
+        self._dbusservice["/System/StaleData"] = 1 if stale else 0
+        if stale != self._comm_alarm_active:
+            self._comm_alarm_active = stale
+            if stale:
+                logger.error("ALARM: No MQTT data received for more than %ss", STALE_TIMEOUT)
+            else:
+                logger.info("MQTT data fresh again, CommunicationError cleared")
+
     def update(self):
         """Update D-Bus values from MQTT data"""
         data = self.mqtt.get_aggregate_data()
         if not data:
             self._dbusservice["/Connected"] = 0
+            self._set_communication_error(True)
             return
 
         self._dbusservice["/Connected"] = 1
+
+        # BMS communication staleness (any subscribed MQTT topic)
+        self._set_communication_error((time() - self.mqtt.last_message_time) > STALE_TIMEOUT)
 
         # DC measurements
         self._dbusservice[PATH_DC_VOLTAGE] = round(data["voltage"], 2)
@@ -438,10 +446,10 @@ class DbusAggregateService:
     def _update_soc_alarm(self, data: dict[str, Any]):
         """Update low state-of-charge alarm."""
         soc = data.get("soc", 100)
-        if soc <= ALARM_LOW_SOC_CRITICAL:
+        if soc <= self.config.battery.alarm_low_soc_critical:
             self._dbusservice["/Alarms/LowSoc"] = 2
             logger.warning("ALARM: Critical Low SoC (%s%%)", soc)
-        elif soc <= ALARM_LOW_SOC:
+        elif soc <= self.config.battery.alarm_low_soc:
             self._dbusservice["/Alarms/LowSoc"] = 1
             logger.warning("WARNING: Low SoC (%s%%)", soc)
         else:
@@ -451,14 +459,14 @@ class DbusAggregateService:
         """Update low cell voltage alarm."""
         if min_cell is None:
             return
-        if min_cell <= ALARM_LOW_CELL_CRITICAL:
+        if min_cell <= self.config.battery.alarm_low_cell_critical:
             self._dbusservice["/Alarms/LowCellVoltage"] = 2
             logger.warning(
                 "ALARM: Critical Low Cell Voltage (%.3fV, Cell %s)",
                 min_cell,
                 min_cell_id,
             )
-        elif min_cell <= ALARM_LOW_CELL_VOLTAGE:
+        elif min_cell <= self.config.battery.alarm_low_cell_voltage:
             self._dbusservice["/Alarms/LowCellVoltage"] = 1
             logger.warning(
                 "WARNING: Low Cell Voltage (%.3fV, Cell %s)",
@@ -472,14 +480,14 @@ class DbusAggregateService:
         """Update high cell voltage alarm."""
         if max_cell is None:
             return
-        if max_cell >= ALARM_HIGH_CELL_CRITICAL:
+        if max_cell >= self.config.battery.alarm_high_cell_critical:
             self._dbusservice["/Alarms/HighCellVoltage"] = 2
             logger.warning(
                 "ALARM: Critical High Cell Voltage (%.3fV, Cell %s)",
                 max_cell,
                 max_cell_id,
             )
-        elif max_cell >= ALARM_HIGH_CELL_VOLTAGE:
+        elif max_cell >= self.config.battery.alarm_high_cell_voltage:
             self._dbusservice["/Alarms/HighCellVoltage"] = 1
             logger.warning(
                 "WARNING: High Cell Voltage (%.3fV, Cell %s)",
@@ -494,10 +502,10 @@ class DbusAggregateService:
         if min_cell is None or max_cell is None:
             return
         diff = max_cell - min_cell
-        if diff >= ALARM_CELL_IMBALANCE * 2:
+        if diff >= self.config.battery.alarm_cell_imbalance * 2:
             self._dbusservice["/Alarms/CellImbalance"] = 2
             logger.warning("ALARM: High Cell Imbalance (%.3fV)", diff)
-        elif diff >= ALARM_CELL_IMBALANCE:
+        elif diff >= self.config.battery.alarm_cell_imbalance:
             self._dbusservice["/Alarms/CellImbalance"] = 1
         else:
             self._dbusservice["/Alarms/CellImbalance"] = 0
@@ -507,19 +515,19 @@ class DbusAggregateService:
         max_temp = data.get("max_temp", 25)
         min_temp = data.get("min_temp", 25)
 
-        if max_temp >= ALARM_HIGH_TEMP_CRITICAL:
+        if max_temp >= self.config.battery.alarm_high_temp_critical:
             self._dbusservice["/Alarms/HighTemperature"] = 2
             logger.warning("ALARM: Critical High Temperature (%s°C)", max_temp)
-        elif max_temp >= ALARM_HIGH_TEMP:
+        elif max_temp >= self.config.battery.alarm_high_temp:
             self._dbusservice["/Alarms/HighTemperature"] = 1
             logger.warning("WARNING: High Temperature (%s°C)", max_temp)
         else:
             self._dbusservice["/Alarms/HighTemperature"] = 0
 
-        if min_temp <= ALARM_LOW_TEMP_CRITICAL:
+        if min_temp <= self.config.battery.alarm_low_temp_critical:
             self._dbusservice["/Alarms/LowTemperature"] = 2
             logger.warning("ALARM: Critical Low Temperature (%s°C)", min_temp)
-        elif min_temp <= ALARM_LOW_TEMP:
+        elif min_temp <= self.config.battery.alarm_low_temp:
             self._dbusservice["/Alarms/LowTemperature"] = 1
             logger.warning("WARNING: Low Temperature (%s°C)", min_temp)
         else:
@@ -712,39 +720,7 @@ class DbusAggregateService:
 
 def main():
     """Main entry point for MQTT battery D-Bus service."""
-    parser = argparse.ArgumentParser(description="MQTT to D-Bus Battery Bridge for Victron")
-    parser.add_argument("--broker", default=DEFAULT_MQTT_BROKER, help="MQTT broker address")
-    parser.add_argument("--port", type=int, default=DEFAULT_MQTT_PORT, help="MQTT broker port")
-    parser.add_argument("--batteries", type=int, default=4, help="Number of batteries")
-    parser.add_argument("--instance", type=int, default=512, help="D-Bus device instance")
-    parser.add_argument(
-        "--topic-prefix", default="battery", help="MQTT topic prefix (default: battery)"
-    )
-    parser.add_argument(
-        "--service-suffix",
-        default="mqtt_chain",
-        help="D-Bus service suffix (default: mqtt_chain)",
-    )
-    parser.add_argument("--product-name", default="JBD Battery Chain", help="Product name in GUI")
-    parser.add_argument(
-        "--capacity",
-        type=float,
-        default=280,
-        help="Installed capacity in Ah (for series-connected batteries)",
-    )
-    parser.add_argument(
-        "--cells-per-bms",
-        type=int,
-        default=4,
-        help="Number of cells per BMS module (default: 4 for 12V LiFePO4)",
-    )
-    parser.add_argument(
-        "--bms-first",
-        type=int,
-        default=1,
-        help="First MQTT BMS index for this chain (chain1: 1, chain2 with bms3+bms4: 3)",
-    )
-    args = parser.parse_args()
+    config, args = load_config()
 
     logger.info("=== dbus-mqtt-battery v%s ===", VERSION)
     logger.info("MQTT Broker: %s:%s", args.broker, args.port)
@@ -786,7 +762,7 @@ def main():
 
     # Create D-Bus service
     dbus_service = DbusAggregateService(
-        mqtt_client, args.instance, args.service_suffix, args.product_name
+        mqtt_client, args.instance, args.service_suffix, args.product_name, config=config
     )
 
     # Heartbeat file for watchdog

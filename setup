@@ -11,8 +11,6 @@ source "/data/SetupHelper/HelperResources/IncludeHelpers"
 defaultChains="2"
 defaultBatteries="4"
 defaultCellsPerBms="4"
-defaultEnableVirtual="true"
-defaultSmartshunt="ttyUSB0"
 
 # Read configuration from setupOptions
 readConfig() {
@@ -33,18 +31,6 @@ readConfig() {
     else
         cellsPerBms="$defaultCellsPerBms"
     fi
-
-    if [ -f "$setupOptionsDir/enableVirtual" ]; then
-        enableVirtual=$(cat "$setupOptionsDir/enableVirtual")
-    else
-        enableVirtual="$defaultEnableVirtual"
-    fi
-
-    if [ -f "$setupOptionsDir/smartshunt" ]; then
-        smartshunt=$(cat "$setupOptionsDir/smartshunt")
-    else
-        smartshunt="$defaultSmartshunt"
-    fi
 }
 
 # Create a chain service
@@ -64,222 +50,69 @@ createChainService() {
     # BMS first index - default 1 (each ESP32 numbers its BMS from 1)
     # Override via setupOptions if using single ESP32 for multiple chains
     if [ -f "$setupOptionsDir/bmsFirst${chainNum}" ]; then
-        bmsFirstIndex=$(cat "$setupOptionsDir/bmsFirst${chainNum}")
+        bmsFirst=$(cat "$setupOptionsDir/bmsFirst${chainNum}")
     else
-        bmsFirstIndex=1
+        bmsFirst=1
     fi
-    bmsFirst="--bms-first $bmsFirstIndex"
 
-    # Service stored in /data (persists across reboots), symlinked to /service
-    local serviceDataDir="/data/dbus-mqtt-battery/service/$serviceName"
-
-    logMessage "Creating service: $serviceName (instance $instance, topic $topicPrefix, dbus suffix $dbusSuffix)"
-
-    mkdir -p "/var/log/$serviceName"
-    mkdir -p "$serviceDataDir/log"
-
-    # Main run script
-    cat > "$serviceDataDir/run" << EOF
+    echo ">>> Setting up Chain ${chainNum} service..."
+    mkdir -p /service/$serviceName/log /var/log/$serviceName
+    cat > /service/$serviceName/run << 'EOF'
 #!/bin/sh
 exec 2>&1
-cd /data/dbus-mqtt-battery
-sleep 2
-exec python3 -u dbus-mqtt-battery.py \\
-    --broker 127.0.0.1 \\
-    --batteries $batteries \\
-    --cells-per-bms $cellsPerBms \\
-    --instance $instance \\
-    --topic-prefix $topicPrefix \\
-    --service-suffix $dbusSuffix \\
-    --product-name "JBD Battery Chain $chainNum" $bmsFirst
+cd /data/apps/dbus-mqtt-battery
+exec python3 dbus-mqtt-battery.py \
+    --broker "$(cat /data/setupOptions/dbus-mqtt-battery/broker 2>/dev/null || echo "192.168.160.150")" \
+    --batteries "$batteries" \
+    --instance $instance \
+    --topic-prefix "$topicPrefix" \
+    --service-suffix "$dbusSuffix" \
+    --product-name "JBD Battery Chain ${chainNum}" \
+    --bms-first $bmsFirst
 EOF
-    chmod +x "$serviceDataDir/run"
-
-    # Log run script (use multilog, not svlogd - Venus OS standard)
-    cat > "$serviceDataDir/log/run" << EOF
-#!/bin/sh
-exec 2>&1
-exec multilog t s25000 n4 /var/log/$serviceName
+    chmod +x /service/$serviceName/run
+    cat > /service/$serviceName/log/run << 'EOF'
+exec svlogd -tt /var/log/dbus-mqtt-chain${chainNum}
 EOF
-    chmod +x "$serviceDataDir/log/run"
-
-    # Create /service symlink
-    ln -sf "$serviceDataDir" "/service/$serviceName"
+    chmod +x /service/$serviceName/log/run
+    echo "Created /service/dbus-mqtt-chain${chainNum}"
 }
 
-# Create virtual battery service
-createVirtualService() {
-    local serviceName="dbus-virtual-chain"
-    local serviceDataDir="/data/dbus-mqtt-battery/service/$serviceName"
-
-    logMessage "Creating service: $serviceName (auto-discovering chain services on D-Bus)"
-
-    mkdir -p "/var/log/$serviceName"
-    mkdir -p "$serviceDataDir/log"
-
-    # Main run script
-    cat > "$serviceDataDir/run" << EOF
-#!/bin/sh
-exec 2>&1
-cd /data/dbus-mqtt-battery
-sleep 5
-exec python3 -u dbus-virtual-battery.py --smartshunt $smartshunt
-EOF
-    chmod +x "$serviceDataDir/run"
-
-    # Log run script (use multilog, not svlogd - Venus OS standard)
-    cat > "$serviceDataDir/log/run" << EOF
-#!/bin/sh
-exec 2>&1
-exec multilog t s25000 n4 /var/log/$serviceName
-EOF
-    chmod +x "$serviceDataDir/log/run"
-
-    # Create /service symlink
-    ln -sf "$serviceDataDir" "/service/$serviceName"
-}
-
-# Function to set up firmware update persistence
-setupFirmwarePersistence() {
-    logMessage "Setting up Venus OS firmware update persistence..."
-
-    # Add rc.local entry to recreate symlinks and start services on boot
-    RC_LOCAL="/data/rc.local"
-    if [ ! -f "$RC_LOCAL" ]; then
-        echo "#!/bin/sh" > "$RC_LOCAL"
-        chmod +x "$RC_LOCAL"
-    fi
-
-    if ! grep -q "dbus-mqtt-battery service persistence" "$RC_LOCAL" 2>/dev/null; then
-        cat >> "$RC_LOCAL" << 'EOF'
-
-# === dbus-mqtt-battery service persistence ===
-# Recreate /service symlinks on boot (lost since /service is tmpfs)
-ln -sf /data/dbus-mqtt-battery/service/dbus-mqtt-chain1 /service/dbus-mqtt-chain1
-ln -sf /data/dbus-mqtt-battery/service/dbus-mqtt-chain2 /service/dbus-mqtt-chain2
-ln -sf /data/dbus-mqtt-battery/service/dbus-virtual-chain /service/dbus-virtual-chain
-sleep 3
-svc -u /service/dbus-mqtt-chain1/log 2>/dev/null || true
-svc -u /service/dbus-mqtt-chain1 2>/dev/null || true
-svc -u /service/dbus-mqtt-chain2/log 2>/dev/null || true
-svc -u /service/dbus-mqtt-chain2 2>/dev/null || true
-svc -u /service/dbus-virtual-chain/log 2>/dev/null || true
-svc -u /service/dbus-virtual-chain 2>/dev/null || true
-# === end dbus-mqtt-battery ===
-
-EOF
-        logMessage "Added boot persistence to $RC_LOCAL"
-    else
-        # Update existing entry to recreate symlinks
-        logMessage "Service persistence already configured in $RC_LOCAL"
-    fi
-
-    logMessage "Venus OS persistence configured"
-}
-
-# Remove all chain services
-removeServices() {
-    # Remove mqtt chain services
-    for dir in /service/dbus-mqtt-chain*; do
-        if [ -d "$dir" ]; then
-            svc -d "$dir" 2>/dev/null
-            rm -rf "$dir"
-            logMessage "Removed $(basename $dir)"
-        fi
-    done
-
-    # Remove virtual chain service
-    if [ -d "/service/dbus-virtual-chain" ]; then
-        svc -d "/service/dbus-virtual-chain" 2>/dev/null
-        rm -rf "/service/dbus-virtual-chain"
-        logMessage "Removed dbus-virtual-chain"
-    fi
-
-    # Also remove service directories from /data (persistent storage)
-    if [ -d "/data/dbus-mqtt-battery/service" ]; then
-        rm -rf /data/dbus-mqtt-battery/service/dbus-mqtt-chain* /data/dbus-mqtt-battery/service/dbus-virtual-chain 2>/dev/null || true
-        logMessage "Removed service directories from /data"
-    fi
-}
-
-#### running manually - prompt for input
-if [ "$scriptAction" == 'NONE' ]; then
-    standardActionPrompt
-fi
-
-#### install
-if [ "$scriptAction" == 'INSTALL' ]; then
-    logMessage "Installing $packageName"
-
-    readConfig
-    logMessage "Configuration: chains=$chains, batteries=$batteries, cellsPerBms=$cellsPerBms, enableVirtual=$enableVirtual"
-
-    # Install Python scripts
-    mkdir -p /data/dbus-mqtt-battery
-    [ "$scriptDir" != "/data/dbus-mqtt-battery" ] && cp "$scriptDir/dbus-mqtt-battery.py" /data/dbus-mqtt-battery/
-    [ "$scriptDir" != "/data/dbus-mqtt-battery" ] && cp "$scriptDir/dbus-virtual-battery.py" /data/dbus-mqtt-battery/
-    chmod +x /data/dbus-mqtt-battery/*.py
-
-    # Install QML files (GUI pages)
-    if [ -d "$scriptDir/qml" ]; then
-        mkdir -p /data/dbus-mqtt-battery/qml
-        cp -r "$scriptDir/qml/"*.qml /data/dbus-mqtt-battery/qml/ 2>/dev/null || true
-        logMessage "Installed QML files"
-    fi
-
-    # Install QML overlay files (if overlay-fs is set up)
-    if [ -d "$scriptDir/qml/overlay" ] && [ -d "/data/apps/overlay-fs/data/gui/upper/qml" ]; then
-        cp -r "$scriptDir/qml/overlay/"*.qml /data/apps/overlay-fs/data/gui/upper/qml/ 2>/dev/null || true
-        logMessage "Installed QML overlay files"
-    fi
-
-    # Install overlay-fs (GUI overlay scripts)
-    if [ -d "$scriptDir/overlay-fs" ]; then
-        mkdir -p /data/dbus-mqtt-battery/overlay-fs
-        cp -r "$scriptDir/overlay-fs/"* /data/dbus-mqtt-battery/overlay-fs/ 2>/dev/null || true
-        chmod +x /data/dbus-mqtt-battery/overlay-fs/*.sh 2>/dev/null || true
-        logMessage "Installed overlay-fs scripts"
-    fi
-
-    # Remove old services first (clean install)
-    removeServices
-
-    # Create chain services based on configuration
-    for i in $(seq 1 $chains); do
+# Create all chain services
+createChainServices() {
+    for ((i=1; i<=chains; i++)); do
         createChainService $i
     done
+}
 
-    # Create virtual service if enabled
-    if [ "$enableVirtual" = "true" ] || [ "$enableVirtual" = "1" ] || [ "$enableVirtual" = "yes" ]; then
-        createVirtualService
-    fi
-
-    # Register with PackageManager (for GUI v1 management)
-    pmDir="/data/packageManager/$packageName"
-    mkdir -p "$pmDir"
-    [ -f "$scriptDir/gitHubInfo" ] && cp "$scriptDir/gitHubInfo" "$pmDir/"
-    ln -sf "$scriptDir" "$pmDir/current"
-    svc -t /service/PackageManager 2>/dev/null || true
-
-    # Venus OS firmware update persistence
-    setupFirmwarePersistence
-
-    logMessage "Installation complete"
-fi
-
-#### uninstall
-if [ "$scriptAction" == 'UNINSTALL' ]; then
-    logMessage "Uninstalling $packageName"
-
-    removeServices
-    # Clean up overlay-fs if it was set up
-    [ -x /data/dbus-mqtt-battery/overlay-fs/disable.sh ] && /data/dbus-mqtt-battery/overlay-fs/disable.sh 2>/dev/null || true
-    rm -rf /data/dbus-mqtt-battery
-    rm -rf /data/packageManager/$packageName
-    svc -t /service/PackageManager 2>/dev/null || true
-
-    logMessage "Uninstallation complete"
-fi
-
-# endScript without INSTALL_SERVICE since we manage services manually
-endScript
+# Main execution
+case "$1" in
+    "")
+        # No arguments - show help
+        echo "dbus-mqtt-battery SetupHelper script"
+        echo "Usage: $0 {install|remove}"
+        ;;
+    install)
+        readConfig
+        createChainServices
+        echo "  svstat /service/dbus-mqtt-chain*"
+        ;;
+    remove)
+        echo "Removing dbus-mqtt-battery services..."
+        for ((i=1; i<=10; i++)); do
+            serviceName="dbus-mqtt-chain${i}"
+            if [ -d "/service/$serviceName" ]; then
+                svc -d "/service/$serviceName" 2>/dev/null || true
+                svc -u "/service/$serviceName" 2>/dev/null || true
+                rm -rf "/service/$serviceName"
+                echo "  Removed $serviceName"
+            fi
+        done
+        # Note: We don't stop the log services here as SetupHelper handles that
+        ;;
+    *)
+        echo "Invalid command: $1"
+        echo "Usage: $0 {install|remove}"
+        exit 1
+        ;;
+esac
