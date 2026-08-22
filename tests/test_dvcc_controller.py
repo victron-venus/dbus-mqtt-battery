@@ -1,8 +1,8 @@
 """Tests for the DvccController class."""
 
-import unittest
-import sys
 import os
+import sys
+import unittest
 
 # Add the package directory to the path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

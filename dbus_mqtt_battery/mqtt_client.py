@@ -13,7 +13,7 @@ from threading import Lock
 from time import time
 from typing import Any
 
-from .bms_data import BatteryData, STALE_TIMEOUT
+from .bms_data import STALE_TIMEOUT, BatteryData
 
 logger = logging.getLogger("MqttBattery")
 
@@ -184,7 +184,7 @@ class MqttBatteryClient:
             elif sensor_key in mapping:
                 self.batteries[bms_idx].update(mapping[sensor_key], payload)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - keep MQTT loop alive on any bad payload
             logger.debug("Error processing MQTT message: %s", e)
 
     def _collect_cells_and_temps(
