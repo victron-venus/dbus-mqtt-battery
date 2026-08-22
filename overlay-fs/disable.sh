@@ -26,14 +26,14 @@ while IFS= read -r line; do
         if mountpoint -q "$lowerDir"; then
             echo "Unmounting bind overlay for ${lowerDir}"
             umount "$lowerDir"
-            if [ $? -ne 0 ]; then
+            if [[ $? -ne 0 ]]; then
                 resource_busy=1
             fi
         fi
         if mountpoint -q "${path}/$overlayName/merged"; then
             echo "Unmounting overlay for ${lowerDir}"
             umount "${path}/$overlayName/merged"
-            if [ $? -ne 0 ]; then
+            if [[ $? -ne 0 ]]; then
                 resource_busy=1
             fi
         fi
@@ -48,7 +48,7 @@ sed -i "/bash \/data\/apps\/overlay-fs\/enable.sh > \/data\/apps\/overlay-fs\/st
 echo "The overlay-fs was disabled".
 echo
 
-if [ $resource_busy -eq 1 ]; then
+if [[ $resource_busy -eq 1 ]]; then
     echo "*** Some resources are busy and could not be unmounted. Please reboot to complete."
     echo
 fi

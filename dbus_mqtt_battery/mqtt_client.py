@@ -187,6 +187,90 @@ class MqttBatteryClient:
         except Exception as e:  # noqa: BLE001 - keep MQTT loop alive on any bad payload
             logger.debug("Error processing MQTT message: %s", e)
 
+    def _collect_cells_and_temps(
+        self, valid_batts: list[dict[str, Any]]
+    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
+        """Collect cells and temperatures with global IDs from all battery snapshots."""
+        all_cells_with_id = []
+        all_temps_with_id = []
+        cells_per_bms = self.cells_per_bms
+
+        for batt in valid_batts:
+            for cell_idx, voltage in batt["cells"].items():
+                if voltage and voltage > 0:
+                    # Offset global IDs when this chain starts at bms N > 1
+                    chain_cell_base = (self.bms_first - 1) * cells_per_bms
+                    global_id = (
+                        chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
+                    )
+                    all_cells_with_id.append((global_id, voltage))
+            for temp_idx, temp in batt["temperatures"].items():
+                if temp > -40:
+                    global_id = (batt["battery_id"] - 1) * 2 + temp_idx
+                    all_temps_with_id.append((global_id, temp))
+
+        return all_cells_with_id, all_temps_with_id
+
+    @staticmethod
+    def _cell_extremes(
+        all_cells_with_id: list[tuple[int, float]],
+    ) -> tuple[float | None, int | None, float | None, int | None]:
+        """Return (min_voltage, min_id, max_voltage, max_id), or all None when empty."""
+        if not all_cells_with_id:
+            return None, None, None, None
+        low = min(all_cells_with_id, key=lambda c: c[1])
+        high = max(all_cells_with_id, key=lambda c: c[1])
+        return low[1], low[0], high[1], high[0]
+
+    @staticmethod
+    def _temp_extremes(
+        all_temps_with_id: list[tuple[int, float]],
+    ) -> tuple[float, int, float, int]:
+        """Return (min_temp, min_id, max_temp, max_id); caller guarantees non-empty list."""
+        low = min(all_temps_with_id, key=lambda t: t[1])
+        high = max(all_temps_with_id, key=lambda t: t[1])
+        return low[1], low[0], high[1], high[0]
+
+    def _compute_electrical_totals(
+        self, valid_batts: list[dict[str, Any]], total_capacity_remaining: float
+    ) -> tuple[float, float, float, float, float]:
+        """Compute aggregate voltage/current/power/soc/capacity.
+
+        Uses ESP32 totals when fresh; otherwise derives values from per-BMS data.
+        Important: many ESPHome configs publish voltage_total but NOT current_total.
+        In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
+        """
+        if not ((time() - self.total_updated) < STALE_TIMEOUT and self.total_voltage > 0):
+            # No fresh ESP32 totals: derive everything from per-BMS sums
+            return (
+                sum(b["voltage"] for b in valid_batts),
+                sum(b["current"] for b in valid_batts) / len(valid_batts),
+                sum(b["power"] for b in valid_batts),
+                min(b["soc"] for b in valid_batts),
+                total_capacity_remaining,
+            )
+
+        voltage = self.total_voltage
+        if self.current_total_seen:
+            current = self.total_current
+            power = (
+                self.total_power
+                if self.total_power != 0
+                else self.total_voltage * self.total_current
+            )
+        else:
+            current = sum(b["current"] for b in valid_batts) / len(valid_batts)
+            power = sum(b["power"] for b in valid_batts)
+            if abs(power) < 1.0:
+                power = voltage * current
+        if self.soc_total_seen and self.total_soc > 0:
+            soc = self.total_soc
+            capacity = self.total_capacity if self.total_capacity > 0 else total_capacity_remaining
+        else:
+            soc = min(b["soc"] for b in valid_batts)
+            capacity = total_capacity_remaining
+        return voltage, current, power, soc, capacity
+
     def _update_total(self, sensor_name: str, value: str) -> None:
         """Update aggregate totals."""
         try:
@@ -242,45 +326,18 @@ class MqttBatteryClient:
 
         # Collect all cells with global IDs: (global_cell_id, voltage)
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
-        all_cells_with_id = []
-        all_temps_with_id = []
-        cells_per_bms = self.cells_per_bms
-
-        for batt in valid_batts:
-            for cell_idx, voltage in batt["cells"].items():
-                if voltage and voltage > 0:
-                    # Offset global IDs when this chain starts at bms N > 1
-                    chain_cell_base = (self.bms_first - 1) * cells_per_bms
-                    global_id = (
-                        chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
-                    )
-                    all_cells_with_id.append((global_id, voltage))
-            for temp_idx, temp in batt["temperatures"].items():
-                if temp > -40:
-                    global_id = (batt["battery_id"] - 1) * 2 + temp_idx
-                    all_temps_with_id.append((global_id, temp))
+        all_cells_with_id, all_temps_with_id = self._collect_cells_and_temps(valid_batts)
 
         # Find min/max cells
-        min_cell_voltage: float | None = None
-        min_cell_id: int | None = None
-        max_cell_voltage: float | None = None
-        max_cell_id: int | None = None
-        if all_cells_with_id:
-            min_cell = min(all_cells_with_id, key=lambda x: x[1])
-            max_cell = max(all_cells_with_id, key=lambda x: x[1])
-            min_cell_voltage, min_cell_id = min_cell[1], min_cell[0]
-            max_cell_voltage, max_cell_id = max_cell[1], max_cell[0]
+        min_cell_voltage, min_cell_id, max_cell_voltage, max_cell_id = self._cell_extremes(
+            all_cells_with_id
+        )
 
         # Find min/max temperatures
         min_temp_id: int = 1
         max_temp_id: int = 1
-        min_temp: float
-        max_temp: float
         if all_temps_with_id:
-            min_t = min(all_temps_with_id, key=lambda x: x[1])
-            max_t = max(all_temps_with_id, key=lambda x: x[1])
-            min_temp, min_temp_id = min_t[1], min_t[0]
-            max_temp, max_temp_id = max_t[1], max_t[0]
+            min_temp, min_temp_id, max_temp, max_temp_id = self._temp_extremes(all_temps_with_id)
         else:
             min_temp = sum(b["temperature"] for b in valid_batts) / len(valid_batts)
             max_temp = min_temp
@@ -293,37 +350,10 @@ class MqttBatteryClient:
         avg_soc = sum(b["soc"] for b in valid_batts) / len(valid_batts)
         total_capacity_remaining = total_capacity_full * avg_soc / 100
 
-        # Use ESP32 totals if available, otherwise calculate
-        # Important: many ESPHome configs publish voltage_total but NOT current_total.
-        # In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
-        if (time() - self.total_updated) < STALE_TIMEOUT and self.total_voltage > 0:
-            voltage = self.total_voltage
-            if self.current_total_seen:
-                current = self.total_current
-                power = (
-                    self.total_power
-                    if self.total_power != 0
-                    else self.total_voltage * self.total_current
-                )
-            else:
-                current = sum(b["current"] for b in valid_batts) / len(valid_batts)
-                power = sum(b["power"] for b in valid_batts)
-                if abs(power) < 1.0:
-                    power = voltage * current
-            if self.soc_total_seen and self.total_soc > 0:
-                soc = self.total_soc
-                capacity = (
-                    self.total_capacity if self.total_capacity > 0 else total_capacity_remaining
-                )
-            else:
-                soc = min(b["soc"] for b in valid_batts)
-                capacity = total_capacity_remaining
-        else:
-            voltage = sum(b["voltage"] for b in valid_batts)
-            current = sum(b["current"] for b in valid_batts) / len(valid_batts)
-            power = sum(b["power"] for b in valid_batts)
-            soc = min(b["soc"] for b in valid_batts)
-            capacity = total_capacity_remaining
+        # Use ESP32 totals if available, otherwise calculate from per-BMS data
+        voltage, current, power, soc, capacity = self._compute_electrical_totals(
+            valid_batts, total_capacity_remaining
+        )
 
         return {
             "voltage": voltage,

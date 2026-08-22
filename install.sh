@@ -14,9 +14,9 @@ MQTT_BROKER="${1:-192.168.160.150}"
 
 INSTALL_DIR="/data/apps/dbus-mqtt-battery"
 
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  dbus-mqtt-battery Installer for Venus OS"
-echo "=============================================="
+echo "$SEPARATOR"
 echo "MQTT Broker: $MQTT_BROKER"
 echo ""
 
@@ -217,9 +217,9 @@ fi
 echo "Venus OS persistence configured"
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Installation Complete!"
-echo "=============================================="
+echo "$SEPARATOR"
 echo ""
 echo "Services will start automatically."
 echo ""
