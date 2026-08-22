@@ -13,6 +13,13 @@ from typing import Any
 # Stale data timeout (seconds)
 STALE_TIMEOUT = 60
 
+# Battery parameter keys grouped by conversion type
+_FLOAT_KEYS = frozenset(
+    {"voltage", "current", "power", "soc", "capacity_remaining", "capacity_total"}
+)
+_INT_KEYS = frozenset({"cycles"})
+_BOOL_KEYS = frozenset({"charging", "discharging", "balancing", "online"})
+
 
 class BatteryData:
     """Container for single battery data from MQTT."""
@@ -61,52 +68,48 @@ class BatteryData:
     def update(self, key: str, value: Any) -> None:
         """Update a battery parameter."""
         with self.lock:
-            if key == "voltage":
-                self.voltage = float(value)
-            elif key == "current":
-                self.current = float(value)
-            elif key == "power":
-                self.power = float(value)
-            elif key == "soc":
-                self.soc = float(value)
-            elif key == "capacity_remaining":
-                self.capacity_remaining = float(value)
-            elif key == "capacity_total":
-                self.capacity_total = float(value)
-            elif key == "cycles":
-                self.cycles = int(float(value))
-            elif key == "temperature":
+            if key == "temperature":
                 self.temperature = float(value)
                 self.temperatures[1] = float(value)
             elif key.startswith("temperature_"):
                 # temperature_1, temperature_2, etc.
-                try:
-                    temp_idx = int(key.split("_")[1])
-                    temp_val = float(value)
-                    self.temperatures[temp_idx] = temp_val
-                    # Update main temperature as average
-                    valid_temps = [t for t in self.temperatures.values() if t > -40]
-                    if valid_temps:
-                        self.temperature = sum(valid_temps) / len(valid_temps)
-                except (TypeError, ValueError, IndexError):
-                    pass
-            elif key == "charging":
-                self.charging = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "discharging":
-                self.discharging = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "balancing":
-                self.balancing = str(value).upper() in ("ON", "TRUE", "1")
-            elif key == "online":
-                self.online = str(value).upper() in ("ON", "TRUE", "1")
+                self._update_temperature_sensor(key, value)
             elif key.startswith("cell_"):
                 # cell_1, cell_2, etc.
-                try:
-                    cell_idx = int(key.split("_")[1])
-                    self.cells[cell_idx] = float(value)
-                    self.cell_count = max(self.cell_count, len(self.cells))
-                except (TypeError, ValueError, IndexError):
-                    pass
+                self._update_cell_voltage(key, value)
+            elif key in _BOOL_KEYS:
+                setattr(self, key, str(value).upper() in ("ON", "TRUE", "1"))
+            else:
+                self._update_numeric(key, value)
             self.last_update = time()
+
+    def _update_temperature_sensor(self, key: str, value: Any) -> None:
+        """Store a single sensor reading and refresh the average temperature."""
+        try:
+            temp_idx = int(key.split("_")[1])
+            self.temperatures[temp_idx] = float(value)
+            # Update main temperature as average
+            valid_temps = [t for t in self.temperatures.values() if t > -40]
+            if valid_temps:
+                self.temperature = sum(valid_temps) / len(valid_temps)
+        except (TypeError, ValueError, IndexError):
+            pass
+
+    def _update_cell_voltage(self, key: str, value: Any) -> None:
+        """Store a single cell voltage and track the highest cell count seen."""
+        try:
+            cell_idx = int(key.split("_")[1])
+            self.cells[cell_idx] = float(value)
+            self.cell_count = max(self.cell_count, len(self.cells))
+        except (TypeError, ValueError, IndexError):
+            pass
+
+    def _update_numeric(self, key: str, value: Any) -> None:
+        """Store plain numeric parameters; ignore unknown keys."""
+        if key in _FLOAT_KEYS:
+            setattr(self, key, float(value))
+        elif key in _INT_KEYS:
+            setattr(self, key, int(float(value)))
 
     def get_min_temperature(self) -> tuple[float, int]:
         """Returns (min_temp, sensor_id)."""

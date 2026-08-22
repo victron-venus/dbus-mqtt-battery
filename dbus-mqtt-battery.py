@@ -49,6 +49,7 @@ from dbus_mqtt_battery import (
     PATH_DC_CURRENT,
     PATH_DC_POWER,
     PATH_DC_VOLTAGE,
+    PATH_TIME_TO_GO,
     POLL_INTERVAL_MS,
     VERSION,
     MqttBatteryClient,
@@ -95,8 +96,24 @@ ALARM_HIGH_TEMP_CRITICAL = 55  # °C - Critical high temperature
 ALARM_LOW_TEMP = 0  # °C - Low temperature warning
 ALARM_LOW_TEMP_CRITICAL = -10  # °C - Critical low temperature
 
+# D-Bus alarm paths (values: 0 = OK, 1 = Warning, 2 = Alarm/Critical)
+ALARM_PATH_LOW_SOC = "/Alarms/LowSoc"
+ALARM_PATH_LOW_CELL_VOLTAGE = "/Alarms/LowCellVoltage"
+ALARM_PATH_HIGH_CELL_VOLTAGE = "/Alarms/HighCellVoltage"
+ALARM_PATH_CELL_IMBALANCE = "/Alarms/CellImbalance"
+ALARM_PATH_HIGH_TEMPERATURE = "/Alarms/HighTemperature"
+ALARM_PATH_LOW_TEMPERATURE = "/Alarms/LowTemperature"
+ALARM_PATH_INTERNAL_FAILURE = "/Alarms/InternalFailure"
+ALARM_PATH_LOW_VOLTAGE = "/Alarms/LowVoltage"
+ALARM_PATH_HIGH_VOLTAGE = "/Alarms/HighVoltage"
+
 # Alias for backward compatibility
 CELLS_PER_BMS = DVCC_CELLS_PER_BMS
+
+
+def _gettext_fmt(fmt: str):
+    """Build a gettextcallback rendering values with fmt (e.g. "%.1fAh"); empty when falsy."""
+    return lambda _a, x: (fmt % x) if x else ""
 
 
 # =============================================================================
@@ -161,19 +178,19 @@ class DbusAggregateService:
             "/Capacity",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.1f}Ah" if x else "",
+            gettextcallback=_gettext_fmt("%.1fAh"),
         )
         self._dbusservice.add_path(
             "/InstalledCapacity",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.0f}Ah" if x else "",
+            gettextcallback=_gettext_fmt("%.0fAh"),
         )
         self._dbusservice.add_path(
             "/ConsumedAmphours",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.1f}Ah" if x else "",
+            gettextcallback=_gettext_fmt("%.1fAh"),
         )
 
         # Battery system configuration (GUI v2 System menu)
@@ -191,27 +208,27 @@ class DbusAggregateService:
             "/System/MinCellVoltage",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.3fV"),
         )
         self._dbusservice.add_path("/System/MinVoltageCellId", None, writeable=True)
         self._dbusservice.add_path(
             "/System/MaxCellVoltage",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.3fV"),
         )
         self._dbusservice.add_path("/System/MaxVoltageCellId", None, writeable=True)
         self._dbusservice.add_path(
             "/Voltages/Sum",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.2f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.2fV"),
         )
         self._dbusservice.add_path(
             "/Voltages/Diff",
             None,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.3fV"),
         )
 
         # Individual cell voltages for GUI v2
@@ -227,7 +244,7 @@ class DbusAggregateService:
                 f"/Cell/{i}/Voltage",
                 None,
                 writeable=True,
-                gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+                gettextcallback=_gettext_fmt("%.3fV"),
             )
             # Balancing status per cell (for color coding in GUI)
             self._dbusservice.add_path(f"/Cell/{i}/Balance", None, writeable=True)
@@ -238,7 +255,7 @@ class DbusAggregateService:
                 f"/Voltages/Cell{i}",
                 None,
                 writeable=True,
-                gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+                gettextcallback=_gettext_fmt("%.3fV"),
             )
             self._dbusservice.add_path(f"/Balances/Cell{i}", None, writeable=True)
 
@@ -264,7 +281,7 @@ class DbusAggregateService:
 
         # History
         self._dbusservice.add_path("/History/ChargeCycles", None, writeable=True)
-        self._dbusservice.add_path("/TimeToGo", None, writeable=True)
+        self._dbusservice.add_path(PATH_TIME_TO_GO, None, writeable=True)
 
         # Charge/discharge control (DVCC) - default values for 4S LiFePO4
         # CVL = 3.65V × 4 cells × 4 batteries = 58.4V (series config)
@@ -273,25 +290,25 @@ class DbusAggregateService:
             "/Info/MaxChargeCurrent",
             100.0,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.1f}A" if x else "",
+            gettextcallback=_gettext_fmt("%.1fA"),
         )
         self._dbusservice.add_path(
             "/Info/MaxDischargeCurrent",
             120.0,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.1f}A" if x else "",
+            gettextcallback=_gettext_fmt("%.1fA"),
         )
         self._dbusservice.add_path(
             "/Info/MaxChargeVoltage",
             58.4,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.2f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.2fV"),
         )
         self._dbusservice.add_path(
             "/Info/MaxChargeCellVoltage",
             3.65,
             writeable=True,
-            gettextcallback=lambda a, x: f"{x:.3f}V" if x else "",
+            gettextcallback=_gettext_fmt("%.3fV"),
         )
 
         # IO
@@ -326,7 +343,45 @@ class DbusAggregateService:
         if data.get("capacity_full") and data["capacity_full"] > 0:
             self._dbusservice["/InstalledCapacity"] = round(data["capacity_full"], 0)
 
-        # Time-to-go calculation (in seconds)
+        self._update_time_to_go(data)
+
+        # Cell voltages with IDs
+        self._dbusservice["/System/NrOfCellsPerBattery"] = self.mqtt.cells_per_bms
+        self._update_cell_voltages(data)
+
+        # Per-battery temperatures plus min/max with IDs
+        self._update_temperature_paths(data)
+
+        # Modules status
+        valid_count = sum(1 for b in self.mqtt.batteries.values() if b.is_valid())
+        online_count = data.get("modules_online", valid_count)
+        offline_count = data.get("modules_offline", 0)
+        blocking_charge = data.get("modules_blocking_charge", 0)
+        blocking_discharge = data.get("modules_blocking_discharge", 0)
+
+        self._dbusservice["/System/NrOfModulesOnline"] = online_count
+        self._dbusservice["/System/NrOfModulesOffline"] = (
+            self.mqtt.battery_count - valid_count + offline_count
+        )
+        self._dbusservice["/System/NrOfModulesBlockingCharge"] = blocking_charge
+        self._dbusservice["/System/NrOfModulesBlockingDischarge"] = blocking_discharge
+
+        # History
+        self._dbusservice["/History/ChargeCycles"] = data["cycles"]
+
+        # Charge/discharge control
+        self._dbusservice["/Io/AllowToCharge"] = 1 if data["allow_charge"] else 0
+        self._dbusservice["/Io/AllowToDischarge"] = 1 if data["allow_discharge"] else 0
+
+        # Update alarms based on data
+        self._update_alarms(data)
+
+        # DVCC: Dynamic Voltage and Current Control
+        # Calculate and publish CCL/DCL/CVL for Victron to use
+        self._update_dvcc(data)
+
+    def _update_time_to_go(self, data: dict[str, Any]) -> None:
+        """Compute and publish estimated time-to-go (in seconds)."""
         current = data["current"]
         capacity = data["capacity"]
         capacity_full = data.get("capacity_full", 0)
@@ -339,22 +394,18 @@ class DbusAggregateService:
             # Discharging: time = remaining capacity / discharge current
             hours = capacity / abs(current)
             # Cap at 7 days max
-            time_to_go = min(int(hours * 3600), 7 * 24 * 3600)
-            self._dbusservice["/TimeToGo"] = time_to_go
+            self._dbusservice[PATH_TIME_TO_GO] = min(int(hours * 3600), 7 * 24 * 3600)
         elif current > 0.5 and capacity_full > capacity:
             # Charging: time = (full - remaining) / charge current
             hours = (capacity_full - capacity) / current
             # Cap at 7 days max
-            time_to_go = min(int(hours * 3600), 7 * 24 * 3600)
-            self._dbusservice["/TimeToGo"] = time_to_go
+            self._dbusservice[PATH_TIME_TO_GO] = min(int(hours * 3600), 7 * 24 * 3600)
         else:
             # Idle or very low current - no meaningful time-to-go
-            self._dbusservice["/TimeToGo"] = None
+            self._dbusservice[PATH_TIME_TO_GO] = None
 
-        # Cell voltages with IDs
-        total_cells = data["cell_count"]
-        self._dbusservice["/System/NrOfCellsPerBattery"] = self.mqtt.cells_per_bms
-
+    def _update_cell_voltages(self, data: dict[str, Any]) -> None:
+        """Publish min/max cell info and per-cell voltages for GUI v2."""
         if data["min_cell"] is not None:
             self._dbusservice["/System/MinCellVoltage"] = round(data["min_cell"], 3)
             self._dbusservice["/System/MinVoltageCellId"] = data.get("min_cell_id", 1)
@@ -390,7 +441,8 @@ class DbusAggregateService:
                 except (KeyError, TypeError, ValueError):
                     logger.debug("Failed to write cell voltage to D-Bus for cell %d", cell_id)
 
-        # Update per-battery temperatures
+    def _update_temperature_paths(self, data: dict[str, Any]) -> None:
+        """Publish per-battery temperatures plus min/max with IDs."""
         temps = data.get("temperatures", {})
         for bms_id, temp in temps.items():
             if temp is not None:
@@ -407,87 +459,59 @@ class DbusAggregateService:
             self._dbusservice["/System/MaxCellTemperature"] = round(data["max_temp"], 1)
             self._dbusservice["/System/MaxTemperatureCellId"] = data.get("max_temp_id", 1)
 
-        # Modules status
-        valid_count = sum(1 for b in self.mqtt.batteries.values() if b.is_valid())
-        online_count = data.get("modules_online", valid_count)
-        offline_count = data.get("modules_offline", 0)
-        blocking_charge = data.get("modules_blocking_charge", 0)
-        blocking_discharge = data.get("modules_blocking_discharge", 0)
-
-        self._dbusservice["/System/NrOfModulesOnline"] = online_count
-        self._dbusservice["/System/NrOfModulesOffline"] = (
-            self.mqtt.battery_count - valid_count + offline_count
-        )
-        self._dbusservice["/System/NrOfModulesBlockingCharge"] = blocking_charge
-        self._dbusservice["/System/NrOfModulesBlockingDischarge"] = blocking_discharge
-
-        # History
-        self._dbusservice["/History/ChargeCycles"] = data["cycles"]
-
-        # Charge/discharge control
-        self._dbusservice["/Io/AllowToCharge"] = 1 if data["allow_charge"] else 0
-        self._dbusservice["/Io/AllowToDischarge"] = 1 if data["allow_discharge"] else 0
-
-        # Update alarms based on data
-        self._update_alarms(data)
-
-        # DVCC: Dynamic Voltage and Current Control
-        # Calculate and publish CCL/DCL/CVL for Victron to use
-        self._update_dvcc(data)
-
     def _update_soc_alarm(self, data: dict[str, Any]):
         """Update low state-of-charge alarm."""
         soc = data.get("soc", 100)
         if soc <= ALARM_LOW_SOC_CRITICAL:
-            self._dbusservice["/Alarms/LowSoc"] = 2
+            self._dbusservice[ALARM_PATH_LOW_SOC] = 2
             logger.warning("ALARM: Critical Low SoC (%s%%)", soc)
         elif soc <= ALARM_LOW_SOC:
-            self._dbusservice["/Alarms/LowSoc"] = 1
+            self._dbusservice[ALARM_PATH_LOW_SOC] = 1
             logger.warning("WARNING: Low SoC (%s%%)", soc)
         else:
-            self._dbusservice["/Alarms/LowSoc"] = 0
+            self._dbusservice[ALARM_PATH_LOW_SOC] = 0
 
     def _update_low_cell_voltage_alarm(self, min_cell, min_cell_id):
         """Update low cell voltage alarm."""
         if min_cell is None:
             return
         if min_cell <= ALARM_LOW_CELL_CRITICAL:
-            self._dbusservice["/Alarms/LowCellVoltage"] = 2
+            self._dbusservice[ALARM_PATH_LOW_CELL_VOLTAGE] = 2
             logger.warning(
                 "ALARM: Critical Low Cell Voltage (%.3fV, Cell %s)",
                 min_cell,
                 min_cell_id,
             )
         elif min_cell <= ALARM_LOW_CELL_VOLTAGE:
-            self._dbusservice["/Alarms/LowCellVoltage"] = 1
+            self._dbusservice[ALARM_PATH_LOW_CELL_VOLTAGE] = 1
             logger.warning(
                 "WARNING: Low Cell Voltage (%.3fV, Cell %s)",
                 min_cell,
                 min_cell_id,
             )
         else:
-            self._dbusservice["/Alarms/LowCellVoltage"] = 0
+            self._dbusservice[ALARM_PATH_LOW_CELL_VOLTAGE] = 0
 
     def _update_high_cell_voltage_alarm(self, max_cell, max_cell_id):
         """Update high cell voltage alarm."""
         if max_cell is None:
             return
         if max_cell >= ALARM_HIGH_CELL_CRITICAL:
-            self._dbusservice["/Alarms/HighCellVoltage"] = 2
+            self._dbusservice[ALARM_PATH_HIGH_CELL_VOLTAGE] = 2
             logger.warning(
                 "ALARM: Critical High Cell Voltage (%.3fV, Cell %s)",
                 max_cell,
                 max_cell_id,
             )
         elif max_cell >= ALARM_HIGH_CELL_VOLTAGE:
-            self._dbusservice["/Alarms/HighCellVoltage"] = 1
+            self._dbusservice[ALARM_PATH_HIGH_CELL_VOLTAGE] = 1
             logger.warning(
                 "WARNING: High Cell Voltage (%.3fV, Cell %s)",
                 max_cell,
                 max_cell_id,
             )
         else:
-            self._dbusservice["/Alarms/HighCellVoltage"] = 0
+            self._dbusservice[ALARM_PATH_HIGH_CELL_VOLTAGE] = 0
 
     def _update_cell_imbalance_alarm(self, min_cell, max_cell):
         """Update cell imbalance alarm."""
@@ -495,12 +519,12 @@ class DbusAggregateService:
             return
         diff = max_cell - min_cell
         if diff >= ALARM_CELL_IMBALANCE * 2:
-            self._dbusservice["/Alarms/CellImbalance"] = 2
+            self._dbusservice[ALARM_PATH_CELL_IMBALANCE] = 2
             logger.warning("ALARM: High Cell Imbalance (%.3fV)", diff)
         elif diff >= ALARM_CELL_IMBALANCE:
-            self._dbusservice["/Alarms/CellImbalance"] = 1
+            self._dbusservice[ALARM_PATH_CELL_IMBALANCE] = 1
         else:
-            self._dbusservice["/Alarms/CellImbalance"] = 0
+            self._dbusservice[ALARM_PATH_CELL_IMBALANCE] = 0
 
     def _update_temperature_alarms(self, data: dict[str, Any]):
         """Update high/low temperature alarms."""
@@ -508,22 +532,22 @@ class DbusAggregateService:
         min_temp = data.get("min_temp", 25)
 
         if max_temp >= ALARM_HIGH_TEMP_CRITICAL:
-            self._dbusservice["/Alarms/HighTemperature"] = 2
+            self._dbusservice[ALARM_PATH_HIGH_TEMPERATURE] = 2
             logger.warning("ALARM: Critical High Temperature (%s°C)", max_temp)
         elif max_temp >= ALARM_HIGH_TEMP:
-            self._dbusservice["/Alarms/HighTemperature"] = 1
+            self._dbusservice[ALARM_PATH_HIGH_TEMPERATURE] = 1
             logger.warning("WARNING: High Temperature (%s°C)", max_temp)
         else:
-            self._dbusservice["/Alarms/HighTemperature"] = 0
+            self._dbusservice[ALARM_PATH_HIGH_TEMPERATURE] = 0
 
         if min_temp <= ALARM_LOW_TEMP_CRITICAL:
-            self._dbusservice["/Alarms/LowTemperature"] = 2
+            self._dbusservice[ALARM_PATH_LOW_TEMPERATURE] = 2
             logger.warning("ALARM: Critical Low Temperature (%s°C)", min_temp)
         elif min_temp <= ALARM_LOW_TEMP:
-            self._dbusservice["/Alarms/LowTemperature"] = 1
+            self._dbusservice[ALARM_PATH_LOW_TEMPERATURE] = 1
             logger.warning("WARNING: Low Temperature (%s°C)", min_temp)
         else:
-            self._dbusservice["/Alarms/LowTemperature"] = 0
+            self._dbusservice[ALARM_PATH_LOW_TEMPERATURE] = 0
 
     def _update_internal_failure_alarm(self, data: dict[str, Any]):
         """Update BMS protection / internal failure alarm.
@@ -536,17 +560,17 @@ class DbusAggregateService:
 
         if modules_offline > 0:
             # Some modules are offline - critical alarm
-            self._dbusservice["/Alarms/InternalFailure"] = 2
+            self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 2
             logger.warning("ALARM: %d module(s) OFFLINE!", modules_offline)
         elif modules_blocking > 0:
             # Some modules are blocking discharge - warning
-            self._dbusservice["/Alarms/InternalFailure"] = 1
+            self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 1
             logger.warning(
                 "WARNING: %d module(s) blocking discharge (BMS protection active)",
                 modules_blocking,
             )
         else:
-            self._dbusservice["/Alarms/InternalFailure"] = 0
+            self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 0
 
     def _update_voltage_alarms(self, data: dict[str, Any]):
         """Update low/high aggregate voltage alarms."""
@@ -560,18 +584,18 @@ class DbusAggregateService:
         expected_max = cell_count * 3.65
 
         if voltage <= expected_min:
-            self._dbusservice["/Alarms/LowVoltage"] = 2
+            self._dbusservice[ALARM_PATH_LOW_VOLTAGE] = 2
         elif voltage <= expected_nominal * 0.9:
-            self._dbusservice["/Alarms/LowVoltage"] = 1
+            self._dbusservice[ALARM_PATH_LOW_VOLTAGE] = 1
         else:
-            self._dbusservice["/Alarms/LowVoltage"] = 0
+            self._dbusservice[ALARM_PATH_LOW_VOLTAGE] = 0
 
         if voltage >= expected_max:
-            self._dbusservice["/Alarms/HighVoltage"] = 2
+            self._dbusservice[ALARM_PATH_HIGH_VOLTAGE] = 2
         elif voltage >= expected_nominal * 1.1:
-            self._dbusservice["/Alarms/HighVoltage"] = 1
+            self._dbusservice[ALARM_PATH_HIGH_VOLTAGE] = 1
         else:
-            self._dbusservice["/Alarms/HighVoltage"] = 0
+            self._dbusservice[ALARM_PATH_HIGH_VOLTAGE] = 0
 
     def _update_alarms(self, data: dict[str, Any]):
         """Update alarm states based on battery data.
@@ -627,14 +651,12 @@ class DbusAggregateService:
         should_log = False
         is_limiting = ccl < DVCC_MAX_CHARGE_CURRENT * 0.9
 
-        # Log if CCL is significantly limited
-        if is_limiting:
-            if ccl < DVCC_MAX_CHARGE_CURRENT * 0.5:
-                should_log = True  # Log when heavily limited
-            elif (now - self.last_dvcc_log) > self.dvcc_log_interval:
-                should_log = True
-        elif (now - self.last_dvcc_log) > self.dvcc_log_interval * 4:
-            should_log = True  # Periodic status update
+        # Log when heavily limited; otherwise periodic (interval, or 4x interval when not limiting)
+        if ccl < DVCC_MAX_CHARGE_CURRENT * 0.5:
+            should_log = True
+        else:
+            log_interval = self.dvcc_log_interval if is_limiting else self.dvcc_log_interval * 4
+            should_log = (now - self.last_dvcc_log) > log_interval
 
         if should_log:
             self.last_dvcc_log = self._log_dvcc_status(
@@ -646,8 +668,6 @@ class DbusAggregateService:
                 max_cell_id,
                 max_cell,
                 cell_delta,
-                self.dvcc_log_interval,
-                self.last_dvcc_log,
             )
 
         # If CCL is critically low, log warning with cell info
@@ -674,8 +694,6 @@ class DbusAggregateService:
         max_cell_id: int | None,
         max_cell: float | None,
         cell_delta: float | None,
-        dvcc_log_interval: float,
-        last_dvcc_log: float,
     ) -> float:
         """Log DVCC status and return updated last_dvcc_log."""
         delta_str = f", Δ={cell_delta:.3f}V" if cell_delta is not None else ""
