@@ -2,6 +2,16 @@
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "dbus-mqtt-battery"
+version = "0.0.0"
+
+[tool.setuptools.packages.find]
+include = ["dbus_mqtt_battery*"]
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [tool.setuptools.packages.find]
 include = ["dbus_mqtt_battery*"]
 
