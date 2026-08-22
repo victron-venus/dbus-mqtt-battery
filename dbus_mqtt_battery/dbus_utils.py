@@ -11,18 +11,13 @@ import gc
 import logging
 import os
 import signal
-import sys
+from collections.abc import Callable
 from time import time
-from typing import Any, Callable
+from typing import Any
 
 import dbus
-
-if sys.version_info.major == 2:
-    import gobject
-else:
-    from gi.repository import GLib as gobject
-
 from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib as gobject
 
 logger = logging.getLogger("MqttBattery")
 
@@ -98,7 +93,7 @@ def create_poll_function(
         try:
             service.update()
         except Exception as e:
-            logger.exception("Error in poll: %s", e)
+            logger.exception("Error in poll")
 
         # Periodic garbage collection for memory-constrained Venus OS
         gc_counter += 1

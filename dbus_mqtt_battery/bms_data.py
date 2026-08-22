@@ -18,24 +18,24 @@ class BatteryData:
     """Container for single battery data from MQTT."""
 
     __slots__ = (
+        "balancing",
         "battery_id",
-        "voltage",
-        "current",
-        "power",
-        "soc",
         "capacity_remaining",
         "capacity_total",
-        "cycles",
-        "temperature",
-        "temperatures",
-        "cells",
         "cell_count",
+        "cells",
         "charging",
+        "current",
+        "cycles",
         "discharging",
-        "balancing",
-        "online",
         "last_update",
         "lock",
+        "online",
+        "power",
+        "soc",
+        "temperature",
+        "temperatures",
+        "voltage",
     )
 
     def __init__(self, battery_id: int) -> None:
