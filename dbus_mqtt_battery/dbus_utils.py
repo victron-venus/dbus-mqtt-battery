@@ -31,6 +31,9 @@ PATH_DC_VOLTAGE = "/Dc/0/Voltage"
 PATH_DC_CURRENT = "/Dc/0/Current"
 PATH_DC_POWER = "/Dc/0/Power"
 
+# Battery state paths
+PATH_TIME_TO_GO = "/TimeToGo"
+
 
 def get_bus() -> dbus.Bus:
     """Get the appropriate D-Bus (session or system)."""

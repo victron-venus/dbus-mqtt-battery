@@ -15,6 +15,7 @@ from .dbus_utils import (
     PATH_DC_VOLTAGE,
     PATH_DC_CURRENT,
     PATH_DC_POWER,
+    PATH_TIME_TO_GO,
 )
 from .mqtt_client import MqttBatteryClient
 
@@ -38,4 +39,5 @@ __all__ = [
     "PATH_DC_VOLTAGE",
     "PATH_DC_CURRENT",
     "PATH_DC_POWER",
+    "PATH_TIME_TO_GO",
 ]

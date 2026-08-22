@@ -42,7 +42,7 @@ unset IFS
 
 
 # Get command line arguments
-if [ $# -ne 1 ]; then
+if [[ $# -ne 1 ]]; then
     echo "Usage: $0 <app-name>"
     echo
     echo "Installed app names:"
@@ -90,7 +90,7 @@ while IFS= read -r line; do
                 unset "appNamesArray[$i]"
 
                 # If the entry is empty, remove it from the config file and unmount the overlay
-                if [ ${#appNamesArray[@]} -eq 0 ]; then
+                if [[ ${#appNamesArray[@]} -eq 0 ]]; then
                     sed -i "\;^$configDir;d" "/data/apps/overlay-fs/overlay-fs.conf"
                     echo "The directory \"$configDir\" was removed from the config file."
 
@@ -100,14 +100,14 @@ while IFS= read -r line; do
                     if mountpoint -q "$configDir"; then
                         echo "Unmounting bind overlay for ${configDir}"
                         umount "$configDir"
-                        if [ $? -ne 0 ]; then
+                        if [[ $? -ne 0 ]]; then
                             echo "ERROR: Could not unmount bind overlay for ${configDir}"
                         fi
                     fi
                     if mountpoint -q "${path}/$overlayName/merged"; then
                         echo "Unmounting overlay for ${configDir}"
                         umount "${path}/$overlayName/merged"
-                        if [ $? -ne 0 ]; then
+                        if [[ $? -ne 0 ]]; then
                             echo "ERROR: Could not unmount overlay for ${configDir}"
                         fi
                     fi
