@@ -11,9 +11,11 @@ set -e
 
 SSH_HOST="${SSH_HOST:-Cerbo}"
 
-echo "=============================================="
+SEPARATOR="=============================================="
+
+echo "$SEPARATOR"
 echo "  Deploying dbus-mqtt-battery to Venus OS"
-echo "=============================================="
+echo "$SEPARATOR"
 echo "SSH Host: $SSH_HOST"
 echo ""
 
@@ -38,15 +40,15 @@ echo ">>> Waiting for services to start..."
 sleep 8
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Service Status"
-echo "=============================================="
+echo "$SEPARATOR"
 ssh "$SSH_HOST" 'svstat /service/dbus-mqtt-chain* /service/dbus-virtual-chain 2>/dev/null || echo "No services found"'
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  D-Bus Values"
-echo "=============================================="
+echo "$SEPARATOR"
 ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2 virtual_chain; do
   name=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep string | sed "s/.*\"\(.*\)\"/\1/")
   soc=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep -E "double|int32" | awk "{print \$NF}")
@@ -57,9 +59,9 @@ ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2 virtual_chain; do
 done'
 
 echo ""
-echo "=============================================="
+echo "$SEPARATOR"
 echo "  Deployment Complete!"
-echo "=============================================="
+echo "$SEPARATOR"
 echo ""
 echo "Configuration: /data/setupOptions/dbus-mqtt-battery/"
 echo "  chains       - Number of chains (default: 2)"

@@ -17,6 +17,7 @@ show_help() {
     echo
     echo "Options:"
     echo "  --no-mount    Skip the mount of the directory for now"
+    return 0
 }
 
 no_mount=0
@@ -41,7 +42,7 @@ while [[ "$1" == --* ]]; do
 done
 
 # Check if required arguments are provided
-if [ $# -ne 2 ]; then
+if [[ $# -ne 2 ]]; then
     show_help
     exit 1
 fi
@@ -67,9 +68,9 @@ checkOverlayRecursive() {
     return 1
 }
 
-checkConfigRecursive() {
+check_config_recursive() {
     local dir="$1"
-    while [ "$dir" != "/" ]; do
+    while [[ "$dir" != "/" ]]; do
         if grep -q "^$dir " /data/apps/overlay-fs/overlay-fs.conf; then
             # Output the whole line and not only the directory
             grep "^$dir " /data/apps/overlay-fs/overlay-fs.conf
@@ -82,20 +83,20 @@ checkConfigRecursive() {
 
 
 # Check if the directory exists
-if [ ! -d "$directoryPathArg" ]; then
-    echo "ERROR: The directory \"${directoryPathArg}\" does not exist."
+if [[ ! -d "$directoryPathArg" ]]; then
+    echo "ERROR: The directory \"${directoryPathArg}\" does not exist." >&2
     exit 1
 fi
 
 # Check if the path is a symlink
-if [ -L "$directoryPathArg" ]; then
-    echo "ERROR: The directory \"${directoryPathArg}\" is a symlink and cannot be used."
+if [[ -L "$directoryPathArg" ]]; then
+    echo "ERROR: The directory \"${directoryPathArg}\" is a symlink and cannot be used." >&2
     exit 1
 fi
 
 
 # Check if the directory is already mounted as an overlay and if the directory exists in the config file
-# overlayDir=$(checkOverlayRecursive "$directoryPathArg")
+# overlayDir=$(check_overlay_recursive "$directoryPathArg")
 # if [ $? -eq 0 ]; then
 #     echo "The directory \"$directoryPathArg\" cannot be enabled, since \"$overlayDir\" is already mounted as an overlay-fs."
 #     exit 1
@@ -103,8 +104,8 @@ fi
 
 
 # Check if the directory exists in the config file
-configEntry="$(checkConfigRecursive "$directoryPathArg")"
-if [ $? -eq 0 ]; then
+configEntry="$(check_config_recursive "$directoryPathArg")"
+if [[ $? -eq 0 ]]; then
     # Split the config entry on the first space
     IFS=' ' read -r configDir appNames other <<< "$configEntry"
 
@@ -113,7 +114,7 @@ if [ $? -eq 0 ]; then
 
     # Check if the app name is already in the entry
     for app in "${appNamesArray[@]}"; do
-        if [ "$app" == "$appNameArg" ]; then
+        if [[ "$app" == "$appNameArg" ]]; then
             echo "The app \"$appNameArg\" was already added to the directory \"$configDir\" in the config file."
             exit
         fi

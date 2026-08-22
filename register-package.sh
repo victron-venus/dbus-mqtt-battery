@@ -13,9 +13,9 @@ PM_DIR="/data/packageManager/$PACKAGE_NAME"
 echo "Registering $PACKAGE_NAME with PackageManager..."
 
 # Check if package is installed
-if [ ! -d "$PACKAGE_DIR" ]; then
-    echo "Error: Package not installed at $PACKAGE_DIR"
-    echo "Run setup install first"
+if [[ ! -d "$PACKAGE_DIR" ]]; then
+    echo "Error: Package not installed at $PACKAGE_DIR" >&2
+    echo "Run setup install first" >&2
     exit 1
 fi
 
@@ -23,7 +23,7 @@ fi
 mkdir -p "$PM_DIR"
 
 # Copy gitHubInfo
-if [ -f "$PACKAGE_DIR/gitHubInfo" ]; then
+if [[ -f "$PACKAGE_DIR/gitHubInfo" ]]; then
     cp "$PACKAGE_DIR/gitHubInfo" "$PM_DIR/"
 else
     echo "victron-venus:latest" > "$PM_DIR/gitHubInfo"
