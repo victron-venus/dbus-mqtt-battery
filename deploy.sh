@@ -43,13 +43,13 @@ echo ""
 echo "$SEPARATOR"
 echo "  Service Status"
 echo "$SEPARATOR"
-ssh "$SSH_HOST" 'svstat /service/dbus-mqtt-chain* /service/dbus-virtual-chain 2>/dev/null || echo "No services found"'
+ssh "$SSH_HOST" 'svstat /service/dbus-mqtt-chain* 2>/dev/null || echo "No services found"'
 
 echo ""
 echo "$SEPARATOR"
 echo "  D-Bus Values"
 echo "$SEPARATOR"
-ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2 virtual_chain; do
+ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2; do
   name=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep string | sed "s/.*\"\(.*\)\"/\1/")
   soc=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep -E "double|int32" | awk "{print \$NF}")
   current=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Dc/0/Current com.victronenergy.BusItem.GetValue 2>/dev/null | grep double | awk "{print \$NF}")
@@ -66,8 +66,6 @@ echo ""
 echo "Configuration: /data/setupOptions/dbus-mqtt-battery/"
 echo "  chains       - Number of chains (default: 2)"
 echo "  batteries    - Batteries per chain (default: 4)"
-echo "  enableVirtual - Enable virtual battery (default: true)"
-echo "  smartshunt   - SmartShunt port (default: ttyUSB0)"
 echo ""
 echo "Commands:"
 echo "  Update:   ./deploy.sh"
