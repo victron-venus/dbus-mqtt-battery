@@ -8,7 +8,8 @@ from time import sleep
 
 import pytest
 
-# dbus_utils imports dbus at module level; stub it out for this test env.
+# dbus_utils imports dbus and gi (pygobject) at module level; stub both out
+# for this test env (CI has neither installed).
 if "dbus" not in sys.modules:
     _dbus = types.ModuleType("dbus")
     _mainloop = types.ModuleType("dbus.mainloop")
@@ -17,6 +18,13 @@ if "dbus" not in sys.modules:
     sys.modules["dbus"] = _dbus
     sys.modules["dbus.mainloop"] = _mainloop
     sys.modules["dbus.mainloop.glib"] = _glib
+if "gi" not in sys.modules:
+    _gi = types.ModuleType("gi")
+    _repository = types.ModuleType("gi.repository")
+    _repository.GLib = types.ModuleType("gi.repository.GLib")  # type: ignore[attr-defined]
+    _gi.repository = _repository  # type: ignore[attr-defined]
+    sys.modules["gi"] = _gi
+    sys.modules["gi.repository"] = _repository
 
 from dbus_mqtt_battery.dbus_utils import CircuitBreaker, create_poll_function
 
