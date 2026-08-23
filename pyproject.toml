@@ -5,6 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dbus-mqtt-battery"
 version = "0.0.0"
+dependencies = ["paho-mqtt>=1.6"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+test = ["pytest", "pytest-cov"]
 
 [tool.setuptools.packages.find]
 include = ["dbus_mqtt_battery*"]
