@@ -7,8 +7,6 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Venus OS](https://img.shields.io/badge/Venus%20OS-3.x-blue)](https://github.com/victronenergy/venus)
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/victron-venus/dbus-mqtt-battery)
-[![GitHub stars](https://img.shields.io/github/stars/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/network/members)
 [![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/watchers)
 [![GitHub contributors](https://img.shields.io/github/contributors/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/graphs/contributors)
 [![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venues/dbus-mqtt-battery/issues)
