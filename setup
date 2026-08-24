@@ -93,6 +93,30 @@ createChainServices() {
     done
 }
 
+# Ensure boot persistence: /service is tmpfs, so rc.local recreates the
+# symlinks on every boot. Idempotent — only appends when block missing.
+ensureRcLocalPersistence() {
+    local rcLocal="/data/rc.local"
+    if [ ! -f "$rcLocal" ]; then
+        printf '#!/bin/sh\n' > "$rcLocal"
+        chmod +x "$rcLocal"
+    fi
+    if ! grep -q "dbus-mqtt-chain1" "$rcLocal"; then
+        cat >> "$rcLocal" << 'RCEOF'
+
+# === dbus-mqtt-battery service persistence ===
+# Recreate /service symlinks on boot (lost since /service is tmpfs)
+ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain1 /service/dbus-mqtt-chain1
+ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain2 /service/dbus-mqtt-chain2
+sleep 2
+svc -u /service/dbus-mqtt-chain1 2>/dev/null || true
+svc -u /service/dbus-mqtt-chain2 2>/dev/null || true
+# === end dbus-mqtt-battery ===
+RCEOF
+        echo "Added rc.local boot persistence block"
+    fi
+}
+
 # Main execution
 # NOTE: IncludeHelpers/CommonResources consumes command-line args and sets
 # $scriptAction (CHECK exits early; INSTALL/UNINSTALL fall through to here).
@@ -100,6 +124,7 @@ case "$scriptAction" in
     INSTALL)
         readConfig
         createChainServices
+        ensureRcLocalPersistence
         echo "  svstat /service/dbus-mqtt-chain*"
         ;;
     UNINSTALL)
