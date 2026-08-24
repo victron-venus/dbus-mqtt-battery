@@ -78,8 +78,13 @@ exec python3 dbus-mqtt-battery.py \\
     --bms-first $bmsFirst
 EOF
     chmod +x "$baseDir/run"
+    # Venus OS ships daemontools, not runit: svlogd does not exist, and a
+    # failing logger leaves the main service blocked writing into a full
+    # stderr pipe (D-Bus goes deaf while the process looks "up").
     cat > "$baseDir/log/run" << EOF
-exec svlogd -tt /var/log/dbus-mqtt-chain${chainNum}
+#!/bin/sh
+exec 2>&1
+exec multilog t s25000 n4 /var/log/dbus-mqtt-chain${chainNum}
 EOF
     chmod +x "$baseDir/log/run"
     ln -sfn "$baseDir" "/service/$serviceName"
