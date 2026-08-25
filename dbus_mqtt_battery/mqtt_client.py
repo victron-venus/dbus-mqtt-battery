@@ -8,6 +8,7 @@ and data aggregation from multiple batteries.
 from __future__ import annotations
 
 import logging
+import os
 import re
 from threading import Lock
 from time import time
@@ -73,7 +74,9 @@ class MqttBatteryClient:
         self.last_message_time: float = 0.0
 
         # MQTT client (handle both paho-mqtt v1 and v2)
-        client_id = f"dbus-mqtt-battery-{int(time())}"
+        # topic_prefix+pid: two chains started in the same second got identical ids
+        # and fought over the session (SessionTakenOver every second).
+        client_id = f"dbus-mqtt-battery-{topic_prefix}-{os.getpid()}"
         if PAHO_V2:
             self.client = mqtt.Client(
                 callback_api_version=CallbackAPIVersion.VERSION1, client_id=client_id

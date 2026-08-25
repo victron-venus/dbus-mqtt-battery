@@ -19,6 +19,11 @@ echo "$SEPARATOR"
 echo "SSH Host: $SSH_HOST"
 echo ""
 
+# Stop chain services before replacing files: they run from this directory,
+# and rm -rf while supervised leaves orphan supervises watching deleted dirs
+echo ">>> Stopping services..."
+ssh "$SSH_HOST" "svc -dx /service/dbus-mqtt-chain1 2>/dev/null || true; svc -dx /service/dbus-mqtt-chain2 2>/dev/null || true"
+
 # Download and install
 echo ">>> Downloading latest version..."
 ssh "$SSH_HOST" 'rm -rf /data/dbus-mqtt-battery && \
@@ -50,9 +55,10 @@ echo "$SEPARATOR"
 echo "  D-Bus Values"
 echo "$SEPARATOR"
 ssh "$SSH_HOST" 'for svc in dbus-mqtt-chain1 dbus-mqtt-chain2; do
-  name=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep string | sed "s/.*\"\(.*\)\"/\1/")
-  soc=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep -E "double|int32" | awk "{print \$NF}")
-  current=$(timeout 3 dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Dc/0/Current com.victronenergy.BusItem.GetValue 2>/dev/null | grep double | awk "{print \$NF}")
+  # NOTE: no "timeout" binary on Venus OS busybox - call dbus-send directly
+  name=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /ProductName com.victronenergy.BusItem.GetValue 2>/dev/null | grep variant | sed "s/.*string //; s/\"//g")
+  soc=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Soc com.victronenergy.BusItem.GetValue 2>/dev/null | grep variant | awk "{print \$NF}")
+  current=$(dbus-send --system --print-reply --dest=com.victronenergy.battery.$svc /Dc/0/Current com.victronenergy.BusItem.GetValue 2>/dev/null | grep variant | awk "{print \$NF}")
   if [ -n "$name" ]; then
     printf "%-25s SoC: %5s%%  Current: %6sA\n" "$name" "$soc" "$current"
   fi
