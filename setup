@@ -56,26 +56,39 @@ createChainService() {
     fi
 
     echo ">>> Setting up Chain ${chainNum} service..."
-    mkdir -p /service/$serviceName/log /var/log/$serviceName
-    cat > /service/$serviceName/run << 'EOF'
+    # Persistent location: PackageManager/setup CHECK recreates the /service
+    # symlink after reboot. Writing directly into /service is volatile.
+    local baseDir="/data/dbus-mqtt-battery/service/${serviceName}"
+    mkdir -p "$baseDir/log" /var/log/$serviceName
+    # Bake config values at install time (unquoted heredoc): the run script
+    # executes under svscan where these shell vars don't exist.
+    local broker
+    broker=$(cat /data/setupOptions/dbus-mqtt-battery/broker 2>/dev/null || echo "127.0.0.1")
+    cat > "$baseDir/run" << EOF
 #!/bin/sh
 exec 2>&1
-cd /data/apps/dbus-mqtt-battery
-exec python3 dbus-mqtt-battery.py \
-    --broker "$(cat /data/setupOptions/dbus-mqtt-battery/broker 2>/dev/null || echo "192.168.160.150")" \
-    --batteries "$batteries" \
-    --instance $instance \
-    --topic-prefix "$topicPrefix" \
-    --service-suffix "$dbusSuffix" \
-    --product-name "JBD Battery Chain ${chainNum}" \
+cd /data/dbus-mqtt-battery
+exec python3 dbus-mqtt-battery.py \\
+    --broker "$broker" \\
+    --batteries "$batteries" \\
+    --instance $instance \\
+    --topic-prefix "$topicPrefix" \\
+    --service-suffix "$dbusSuffix" \\
+    --product-name "JBD Battery Chain ${chainNum}" \\
     --bms-first $bmsFirst
 EOF
-    chmod +x /service/$serviceName/run
-    cat > /service/$serviceName/log/run << 'EOF'
-exec svlogd -tt /var/log/dbus-mqtt-chain${chainNum}
+    chmod +x "$baseDir/run"
+    # Venus OS ships daemontools, not runit: svlogd does not exist, and a
+    # failing logger leaves the main service blocked writing into a full
+    # stderr pipe (D-Bus goes deaf while the process looks "up").
+    cat > "$baseDir/log/run" << EOF
+#!/bin/sh
+exec 2>&1
+exec multilog t s25000 n4 /var/log/dbus-mqtt-chain${chainNum}
 EOF
-    chmod +x /service/$serviceName/log/run
-    echo "Created /service/dbus-mqtt-chain${chainNum}"
+    chmod +x "$baseDir/log/run"
+    ln -sfn "$baseDir" "/service/$serviceName"
+    echo "Created $baseDir -> /service/$serviceName"
 }
 
 # Create all chain services
@@ -85,34 +98,58 @@ createChainServices() {
     done
 }
 
+# Ensure boot persistence: /service is tmpfs, so rc.local recreates the
+# symlinks on every boot. Idempotent — only appends when block missing.
+ensureRcLocalPersistence() {
+    local rcLocal="/data/rc.local"
+    if [ ! -f "$rcLocal" ]; then
+        printf '#!/bin/sh\n' > "$rcLocal"
+        chmod +x "$rcLocal"
+    fi
+    if ! grep -q "dbus-mqtt-chain1" "$rcLocal"; then
+        cat >> "$rcLocal" << 'RCEOF'
+
+# === dbus-mqtt-battery service persistence ===
+# Recreate /service symlinks on boot (lost since /service is tmpfs)
+ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain1 /service/dbus-mqtt-chain1
+ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain2 /service/dbus-mqtt-chain2
+sleep 2
+svc -u /service/dbus-mqtt-chain1 2>/dev/null || true
+svc -u /service/dbus-mqtt-chain2 2>/dev/null || true
+# === end dbus-mqtt-battery ===
+RCEOF
+        echo "Added rc.local boot persistence block"
+    fi
+}
+
 # Main execution
-case "$1" in
-    "")
-        # No arguments - show help
-        echo "dbus-mqtt-battery SetupHelper script"
-        echo "Usage: $0 {install|remove}"
-        ;;
-    install)
+# NOTE: IncludeHelpers/CommonResources consumes command-line args and sets
+# $scriptAction (CHECK exits early; INSTALL/UNINSTALL fall through to here).
+case "$scriptAction" in
+    INSTALL)
         readConfig
         createChainServices
+        ensureRcLocalPersistence
         echo "  svstat /service/dbus-mqtt-chain*"
         ;;
-    remove)
+    UNINSTALL)
         echo "Removing dbus-mqtt-battery services..."
         for ((i=1; i<=10; i++)); do
             serviceName="dbus-mqtt-chain${i}"
-            if [ -d "/service/$serviceName" ]; then
+            baseDir="/data/dbus-mqtt-battery/service/${serviceName}"
+            if [ -L "/service/$serviceName" ] || [ -d "/service/$serviceName" ]; then
                 svc -d "/service/$serviceName" 2>/dev/null || true
                 svc -u "/service/$serviceName" 2>/dev/null || true
-                rm -rf "/service/$serviceName"
+                rm -f "/service/$serviceName"
+                rm -rf "$baseDir"
                 echo "  Removed $serviceName"
             fi
         done
         # Note: We don't stop the log services here as SetupHelper handles that
         ;;
     *)
-        echo "Invalid command: $1"
-        echo "Usage: $0 {install|remove}"
-        exit 1
+        # CHECK action and no-arg help fall through to here
+        echo "dbus-mqtt-battery SetupHelper script"
+        echo "Usage: $0 {install|uninstall}  (dispatches on \$scriptAction)"
         ;;
 esac

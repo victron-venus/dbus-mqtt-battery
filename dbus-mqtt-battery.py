@@ -738,17 +738,17 @@ class DbusAggregateService:
 
 def main():
     """Main entry point for MQTT battery D-Bus service."""
-    config, args = load_config()
+    config, _args = load_config()
 
     logger.info("=== dbus-mqtt-battery v%s ===", VERSION)
-    logger.info("MQTT Broker: %s:%s", args.broker, args.port)
-    logger.info("Topic prefix: %s", args.topic_prefix)
+    logger.info("MQTT Broker: %s:%s", config.mqtt.broker, config.mqtt.port)
+    logger.info("Topic prefix: %s", config.mqtt.topic_prefix)
     logger.info(
         "Number of batteries: %s, MQTT BMS index starts at: %s",
-        args.batteries,
-        args.bms_first,
+        config.battery.count,
+        config.battery.bms_first,
     )
-    logger.info("D-Bus service: com.victronenergy.battery.%s", args.service_suffix)
+    logger.info("D-Bus service: com.victronenergy.battery.%s", config.dbus.service_suffix)
 
     # Setup D-Bus main loop
     mainloop = setup_main_loop()
@@ -761,13 +761,13 @@ def main():
 
     # Create MQTT client
     mqtt_client = MqttBatteryClient(
-        args.broker,
-        args.port,
-        args.batteries,
-        args.topic_prefix,
-        args.capacity,
-        args.bms_first,
-        args.cells_per_bms,
+        config.mqtt.broker,
+        config.mqtt.port,
+        config.battery.count,
+        config.mqtt.topic_prefix,
+        config.battery.capacity,
+        config.battery.bms_first,
+        config.battery.cells_per_bms,
     )
     if not mqtt_client.connect():
         logger.warning("Failed to connect to MQTT broker")
@@ -780,7 +780,11 @@ def main():
 
     # Create D-Bus service
     dbus_service = DbusAggregateService(
-        mqtt_client, args.instance, args.service_suffix, args.product_name, config=config
+        mqtt_client,
+        config.dbus.instance,
+        config.dbus.service_suffix,
+        config.dbus.product_name,
+        config=config,
     )
 
     # Heartbeat file for watchdog
