@@ -28,7 +28,7 @@ ssh "$SSH_HOST" "svc -dx /service/dbus-mqtt-chain1 2>/dev/null || true; svc -dx 
 echo ">>> Downloading latest version..."
 ssh "$SSH_HOST" 'rm -rf /data/dbus-mqtt-battery && \
 cd /data && \
-wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/main.tar.gz | tar -xzf - && \
+wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/main.tar.gz | tar -xzf --exclude=build - && \
 mv dbus-mqtt-battery-main dbus-mqtt-battery && \
 chmod +x /data/dbus-mqtt-battery/setup'
 
