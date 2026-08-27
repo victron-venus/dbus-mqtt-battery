@@ -58,16 +58,14 @@ sys.path.insert(
     ),
 )
 
-from vedbus import VeDbusService
-
 # Import shared components from dbus_shared
 from dbus_shared import (
-    POLL_INTERVAL_MS,
-    VERSION,
     PATH_DC_CURRENT,
     PATH_DC_POWER,
     PATH_DC_VOLTAGE,
     PATH_TIME_TO_GO,
+    POLL_INTERVAL_MS,
+    VERSION,
     create_poll_function,
     get_bus,
     register_signal_handlers,
@@ -76,14 +74,15 @@ from dbus_shared import (
     setup_dbus_paths_dc,
     setup_main_loop,
 )
+from vedbus import VeDbusService
 
 # Import service-specific components from local package
 from dbus_mqtt_battery import (
     DVCC_CELLS_PER_BMS,
     STALE_TIMEOUT,
     Config,
-    load_config,
     MqttBatteryClient,
+    load_config,
     setup_dbus_paths_alarms,
 )
 
