@@ -9,5 +9,7 @@ dbus_mqtt_battery/mqtt_client.py
 dbus_mqtt_battery.egg-info/PKG-INFO
 dbus_mqtt_battery.egg-info/SOURCES.txt
 dbus_mqtt_battery.egg-info/dependency_links.txt
+dbus_mqtt_battery.egg-info/requires.txt
 dbus_mqtt_battery.egg-info/top_level.txt
+tests/test_circuit_breaker.py
 tests/test_dvcc_controller.py
