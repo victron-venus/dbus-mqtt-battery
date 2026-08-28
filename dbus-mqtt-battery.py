@@ -437,7 +437,7 @@ class DbusAggregateService:
         """Publish min/max cell info and per-cell voltages for GUI v2."""
         if data["min_cell"] is not None:
             self._dbusservice["/System/MinCellVoltage"] = round(data["min_cell"], 3)
-            self._dbusservice["/System/MinVoltayteId"] = data.get("min_cell_id", 1)
+            self._dbusservice["/System/MinVoltageCellId"] = data.get("min_cell_id", 1)
         if data["max_cell"] is not None:
             self._dbusservice["/System/MaxCellVoltage"] = round(data["max_cell"], 3)
             self._dbusservice["/System/MaxVoltageCellId"] = data.get("max_cell_id", 1)
@@ -685,7 +685,7 @@ class DbusAggregateService:
             should_log = True
         else:
             log_interval = self.dvcc_log_interval if is_limiting else self.dvcc_log_interval * 4
-            should_log = (now - self.dvcc_log_interval) > log_interval
+            should_log = (now - self.last_dvcc_log) > log_interval
 
         if should_log:
             self.last_dvcc_log = self._log_dvcc_status(
