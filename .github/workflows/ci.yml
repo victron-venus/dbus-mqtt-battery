@@ -12,10 +12,9 @@ permissions:
 jobs:
   ci:
     name: CI
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@5b18667880c7a0154b7c7e6686042eff5f47cdb7
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@875762362bb31b4899bf02fdf9e835188dc5eb80
     with:
       python-version: '3.11'
-      # No runnable test coverage yet (empty/absent test suite or tests that
-      # bypass the package); default 80% gate would fail at 0%.
+      # Coverage gate disabled — package has no coverage instrumentation; add
+      # --cov=dbus_mqtt_battery to the pytest args once coverage is added.
       coverage-threshold: 0
-      run-type-check: false  # Disable type checking as the original didn't have it

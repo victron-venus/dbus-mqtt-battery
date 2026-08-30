@@ -1,20 +1,41 @@
-# Existing ignored patterns
-commit.txt
-release.txt
-logs
+# Python
 __pycache__/
+*.py[cod]
 *.pyc
-
-# Additional patterns to ignore
-.DS_Store
+*.pyo
+*.egg-info/
+*.egg
+build/
+dist/
+*.whl
 .pytest_cache/
 .ruff_cache/
 .venv/
-*.bak
+.uv/
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 *~
 *.swp
+*.swo
+*.lock
+
+# IDE
 .vscode/
 .idea/
+*.sublime-*
+
+# Project
+commit.txt
+release.txt
+logs/
+*.bak
 *.backup
-build/
-.coverage
+*.local.py
+local_config.py
