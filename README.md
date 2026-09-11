@@ -32,6 +32,10 @@ This repository provides automated build archives for Victron Venus OS installat
 
 ---
 
+## Aggregate telemetry freshness
+
+Each ESP32 aggregate reading (voltage, current, power, state of charge, and capacity) expires independently after 60 seconds. If one aggregate topic stops updating, the service falls back to current per-BMS readings for that field; updates on other topics cannot keep the old value active. Fresh zero readings remain valid. Invalid or non-finite aggregate payloads do not refresh telemetry.
+
 ## Completed Features
 
 - ✅ **CI/CD Releases & Nightly Builds**: Venus OS installer tarball packaging configured for automated releases
