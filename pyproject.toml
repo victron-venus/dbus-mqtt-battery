@@ -51,3 +51,8 @@ ignore = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+
+# Venus OS runtime libraries do not provide installable type stubs.
+[[tool.mypy.overrides]]
+module = ["dbus", "dbus.*", "gi", "gi.*", "dbus_shared", "vedbus"]
+ignore_missing_imports = true

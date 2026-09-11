@@ -8,14 +8,14 @@ from unittest.mock import MagicMock
 
 # Stub paho before importing the module under test
 _paho = types.ModuleType("paho.mqtt.client")
-_paho.Client = MagicMock
-_paho.client = types.ModuleType("paho.mqtt.client")
-_paho.client.Client = MagicMock
-_paho.enums = types.ModuleType("paho.mqtt.enums")
-_paho.enums.CallbackAPIVersion = types.SimpleNamespace(VERSION1=1)
+vars(_paho)["Client"] = MagicMock
+vars(_paho)["client"] = types.ModuleType("paho.mqtt.client")
+vars(_paho)["client"].Client = MagicMock
+vars(_paho)["enums"] = types.ModuleType("paho.mqtt.enums")
+vars(_paho)["enums"].CallbackAPIVersion = types.SimpleNamespace(VERSION1=1)
 sys.modules["paho.mqtt"] = _paho
-sys.modules["paho.mqtt.client"] = _paho.client
-sys.modules["paho.mqtt.enums"] = _paho.enums
+sys.modules["paho.mqtt.client"] = vars(_paho)["client"]
+sys.modules["paho.mqtt.enums"] = vars(_paho)["enums"]
 
 from dbus_mqtt_battery.mqtt_client import MqttBatteryClient
 

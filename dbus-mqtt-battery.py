@@ -141,7 +141,7 @@ class DbusAggregateService:
         device_instance: int = 512,
         service_suffix: str = "mqtt_chain",
         product_name: str = "JBD Battery Chain",
-        config: Config = None,
+        config: Config | None = None,
     ):
         self.mqtt = mqtt_client
         self.device_instance = device_instance
@@ -152,7 +152,7 @@ class DbusAggregateService:
         total_cells = mqtt_client.battery_count * mqtt_client.cells_per_bms
         self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
-        self.last_dvcc_log = 0
+        self.last_dvcc_log = 0.0
         self._comm_alarm_active = False  # For log-on-transition of CommunicationError
 
         service_name = f"com.victronenergy.battery.{service_suffix}"
