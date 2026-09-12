@@ -6,8 +6,9 @@ Thread-safe container for battery parameters received from MQTT.
 
 from __future__ import annotations
 
-from threading import Lock
-from time import time
+import math
+from threading import RLock
+from time import monotonic
 from typing import Any
 
 # Stale data timeout (seconds)
@@ -19,12 +20,14 @@ _FLOAT_KEYS = frozenset(
 )
 _INT_KEYS = frozenset({"cycles"})
 _BOOL_KEYS = frozenset({"charging", "discharging", "balancing", "online"})
+_LIVE_KEYS = frozenset({"voltage", "current", "power", "soc"})
 
 
 class BatteryData:
     """Container for single battery data from MQTT."""
 
     __slots__ = (
+        "_sample_times",
         "balancing",
         "battery_id",
         "capacity_remaining",
@@ -63,53 +66,62 @@ class BatteryData:
         self.balancing: bool = False
         self.online: bool = True
         self.last_update: float = 0.0
-        self.lock = Lock()
+        self.lock = RLock()
+        self._sample_times: dict[str, float] = {}
 
     def update(self, key: str, value: Any) -> None:
         """Update a battery parameter."""
         with self.lock:
-            if key == "temperature":
-                self.temperature = float(value)
-                self.temperatures[1] = float(value)
-            elif key.startswith("temperature_"):
-                # temperature_1, temperature_2, etc.
-                self._update_temperature_sensor(key, value)
-            elif key.startswith("cell_"):
-                # cell_1, cell_2, etc.
-                self._update_cell_voltage(key, value)
-            elif key in _BOOL_KEYS:
-                setattr(self, key, str(value).upper() in ("ON", "TRUE", "1"))
-            else:
-                self._update_numeric(key, value)
-            self.last_update = time()
+            if key in _BOOL_KEYS:
+                text = str(value).upper()
+                if text not in ("ON", "TRUE", "1", "OFF", "FALSE", "0"):
+                    return
+                setattr(self, key, text in ("ON", "TRUE", "1"))
+                return
+            try:
+                numeric = float(value)
+                if not math.isfinite(numeric):
+                    return
+                if key == "temperature":
+                    key = "temperature_1"
+                if key.startswith("temperature_"):
+                    self._update_temperature_sensor(key, numeric)
+                elif key.startswith("cell_"):
+                    self._update_cell_voltage(key, numeric)
+                elif key in _FLOAT_KEYS:
+                    setattr(self, key, numeric)
+                elif key in _INT_KEYS:
+                    setattr(self, key, int(numeric))
+                else:
+                    return
+            except (TypeError, ValueError, OverflowError):
+                return
+            # Status, capacity and cycle topics cannot renew live measurements.
+            if key in _LIVE_KEYS or key.startswith(("cell_", "temperature_")):
+                self.last_update = monotonic()
+                self._sample_times[key] = self.last_update
 
     def _update_temperature_sensor(self, key: str, value: Any) -> None:
         """Store a single sensor reading and refresh the average temperature."""
-        try:
-            temp_idx = int(key.split("_")[1])
-            self.temperatures[temp_idx] = float(value)
-            # Update main temperature as average
-            valid_temps = [t for t in self.temperatures.values() if t > -40]
-            if valid_temps:
-                self.temperature = sum(valid_temps) / len(valid_temps)
-        except (TypeError, ValueError, IndexError):
-            pass
+        temp_idx = self._sensor_index(key)
+        self.temperatures[temp_idx] = float(value)
+        valid_temps = [t for t in self.temperatures.values() if t > -40]
+        if valid_temps:
+            self.temperature = sum(valid_temps) / len(valid_temps)
 
     def _update_cell_voltage(self, key: str, value: Any) -> None:
         """Store a single cell voltage and track the highest cell count seen."""
-        try:
-            cell_idx = int(key.split("_")[1])
-            self.cells[cell_idx] = float(value)
-            self.cell_count = max(self.cell_count, len(self.cells))
-        except (TypeError, ValueError, IndexError):
-            pass
+        cell_idx = self._sensor_index(key)
+        self.cells[cell_idx] = float(value)
+        self.cell_count = max(self.cell_count, len(self.cells))
 
-    def _update_numeric(self, key: str, value: Any) -> None:
-        """Store plain numeric parameters; ignore unknown keys."""
-        if key in _FLOAT_KEYS:
-            setattr(self, key, float(value))
-        elif key in _INT_KEYS:
-            setattr(self, key, int(float(value)))
+    @staticmethod
+    def _sensor_index(key: str) -> int:
+        """Reject malformed sensor names before recording their freshness."""
+        index = int(key.split("_", 1)[1])
+        if index < 1:
+            raise ValueError("Sensor index must be positive")
+        return index
 
     def get_min_temperature(self) -> tuple[float, int]:
         """Returns (min_temp, sensor_id)."""
@@ -128,8 +140,21 @@ class BatteryData:
         return max_temp[1], max_temp[0]
 
     def is_valid(self) -> bool:
-        """Check if data is recent enough."""
-        return (time() - self.last_update) < STALE_TIMEOUT and self.voltage > 0
+        """Require fresh voltage and every live measurement this BMS publishes.
+
+        Optional, never-published sensors do not become mandatory. Binary BMS
+        status is change-driven and remains latched while measurements are fresh.
+        """
+        with self.lock:
+            now = monotonic()
+            return (
+                self.online
+                and self.voltage > 0
+                and "voltage" in self._sample_times
+                and all(
+                    0 <= now - updated < STALE_TIMEOUT for updated in self._sample_times.values()
+                )
+            )
 
     def get_min_cell_voltage(self) -> tuple[float | None, int | None]:
         """Returns (min_voltage, cell_id)."""

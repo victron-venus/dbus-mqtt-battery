@@ -2,6 +2,8 @@
 
 # pylint: disable=missing-class-docstring,missing-function-docstring
 
+import pytest
+
 from dbus_mqtt_battery.bms_data import BatteryData
 
 
@@ -121,3 +123,60 @@ class TestCellExtrema:
         b = BatteryData(1)
         b.update("cell_1", "0")
         assert b.get_min_cell_voltage() == (None, None)
+
+
+@pytest.mark.parametrize(
+    "refresh_key,value",
+    [
+        ("online", "ON"),
+        ("cycles", 10),
+        ("capacity_total", 280),
+        ("unknown", 3),
+        ("cell_bad", 3.3),
+        ("temperature_bad", 25),
+    ],
+)
+def test_unrelated_messages_cannot_revive_stale_voltage(monkeypatch, refresh_key, value):
+    now = [100.0]
+    monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
+    battery = BatteryData(1)
+    battery.update("voltage", 13.2)
+    now[0] += 60
+    battery.update(refresh_key, value)
+    assert not battery.is_valid()
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [("current", 10), ("power", 132), ("soc", 50), ("cell_1", 3.3), ("temperature_1", 25)],
+)
+def test_each_observed_live_field_must_remain_fresh(monkeypatch, field, value):
+    now = [100.0]
+    monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
+    battery = BatteryData(1)
+    battery.update("voltage", 13.2)
+    battery.update(field, value)
+    now[0] += 60
+    battery.update("voltage", 13.3)
+    assert not battery.is_valid()
+    for invalid in ("nan", "inf", "-inf", "invalid"):
+        battery.update(field, invalid)
+        assert not battery.is_valid()
+    battery.update(field, value)
+    assert battery.is_valid()
+
+
+def test_binary_blocks_are_latched_while_live_measurements_refresh(monkeypatch):
+    now = [100.0]
+    monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
+    battery = BatteryData(1)
+    battery.update("voltage", 13.2)
+    battery.update("charging", "OFF")
+    now[0] += 3600
+    battery.update("voltage", 13.3)
+    assert battery.is_valid()
+    assert not battery.charging
+    battery.update("online", "OFF")
+    assert not battery.is_valid()
+    battery.update("online", "ON")
+    assert battery.is_valid()

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.4] - 2026-09-12
+
+### Fixed
+- Keep charge and discharge disabled while any configured series BMS is missing, offline or stale, including startup; publish zero current limits and invalidate aggregate electrical readings.
+- Expire each observed live BMS measurement independently after 60 seconds using a monotonic clock. Status and static metadata cannot revive old readings.
+- Preserve latched BMS charge/discharge blocks during telemetry recovery and count missing modules consistently in alarms and status.
+
 ## [2.7.3] - 2026-09-12
 
 ### Fixed

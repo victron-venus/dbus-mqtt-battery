@@ -307,13 +307,11 @@ class MqttBatteryClient:
         """Get aggregated data from all batteries (thread-safe)."""
         # Copy battery data under lock to avoid race conditions with MQTT thread
         with self._data_lock:
-            valid_batteries = [b for b in self.batteries.values() if b.is_valid()]
-            if not valid_batteries:
-                return None
-            # Copy volatile data from each battery
             batt_snapshots: list[dict[str, Any]] = []
-            for b in valid_batteries:
+            for b in self.batteries.values():
                 with b.lock:
+                    if not b.is_valid():
+                        continue
                     batt_snapshots.append(
                         {
                             "battery_id": b.battery_id,
@@ -332,9 +330,13 @@ class MqttBatteryClient:
                             "online": b.online,
                         }
                     )
+            if not batt_snapshots:
+                return None
 
         # Process snapshots outside of locks
         valid_batts = batt_snapshots
+        missing_count = self.battery_count - len(valid_batts)
+        data_complete = missing_count == 0
 
         # Collect all cells with global IDs: (global_cell_id, voltage)
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
@@ -368,6 +370,7 @@ class MqttBatteryClient:
         )
 
         return {
+            "data_complete": data_complete,
             "voltage": voltage,
             "current": current,
             "power": power,
@@ -384,13 +387,15 @@ class MqttBatteryClient:
             "max_temp_id": max_temp_id,
             "temperature": sum(b["temperature"] for b in valid_batts) / len(valid_batts),
             "cell_count": sum(b["cell_count"] for b in valid_batts),
-            "allow_charge": all(b["charging"] for b in valid_batts),
-            "allow_discharge": all(b["discharging"] for b in valid_batts),
+            "allow_charge": data_complete and all(b["charging"] for b in valid_batts),
+            "allow_discharge": data_complete and all(b["discharging"] for b in valid_batts),
             "cycles": max(b["cycles"] for b in valid_batts),
             "modules_online": sum(1 for b in valid_batts if b["online"]),
-            "modules_offline": sum(1 for b in valid_batts if not b["online"]),
-            "modules_blocking_discharge": sum(1 for b in valid_batts if not b["discharging"]),
-            "modules_blocking_charge": sum(1 for b in valid_batts if not b["charging"]),
+            "modules_offline": missing_count,
+            "modules_blocking_discharge": missing_count
+            + sum(1 for b in valid_batts if not b["discharging"]),
+            "modules_blocking_charge": missing_count
+            + sum(1 for b in valid_batts if not b["charging"]),
             "all_cells": all_cells_with_id,  # List of (global_id, voltage) tuples
             "temperatures": {
                 b["battery_id"]: b["temperature"] for b in valid_batts
