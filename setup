@@ -67,7 +67,7 @@ createChainService() {
     cat > "$baseDir/run" << EOF
 #!/bin/sh
 exec 2>&1
-cd /data/dbus-mqtt-battery
+cd /data/dbus-mqtt-battery || exit 1
 exec python3 dbus-mqtt-battery.py \\
     --broker "$broker" \\
     --batteries "$batteries" \\
@@ -75,6 +75,7 @@ exec python3 dbus-mqtt-battery.py \\
     --topic-prefix "$topicPrefix" \\
     --service-suffix "$dbusSuffix" \\
     --product-name "JBD Battery Chain ${chainNum}" \\
+    --cells-per-bms "$cellsPerBms" \\
     --bms-first $bmsFirst
 EOF
     chmod +x "$baseDir/run"
@@ -87,6 +88,11 @@ exec 2>&1
 exec multilog t s25000 n4 /var/log/dbus-mqtt-chain${chainNum}
 EOF
     chmod +x "$baseDir/log/run"
+    # A legacy real directory would make ln create a nested link.
+    if [ -d "/service/$serviceName" ] && [ ! -L "/service/$serviceName" ]; then
+        svc -dx "/service/$serviceName" "/service/$serviceName/log" 2>/dev/null || true
+        mv "/service/$serviceName" "/data/dbus-mqtt-battery/legacy-$serviceName.$(date +%s)"
+    fi
     ln -sfn "$baseDir" "/service/$serviceName"
     echo "Created $baseDir -> /service/$serviceName"
 }
@@ -101,25 +107,31 @@ createChainServices() {
 # Ensure boot persistence: /service is tmpfs, so rc.local recreates the
 # symlinks on every boot. Idempotent — only appends when block missing.
 ensureRcLocalPersistence() {
-    local rcLocal="/data/rc.local"
-    if [ ! -f "$rcLocal" ]; then
-        printf '#!/bin/sh\n' > "$rcLocal"
-        chmod +x "$rcLocal"
-    fi
-    if ! grep -q "dbus-mqtt-chain1" "$rcLocal"; then
-        cat >> "$rcLocal" << 'RCEOF'
-
-# === dbus-mqtt-battery service persistence ===
-# Recreate /service symlinks on boot (lost since /service is tmpfs)
-ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain1 /service/dbus-mqtt-chain1
-ln -sfn /data/dbus-mqtt-battery/service/dbus-mqtt-chain2 /service/dbus-mqtt-chain2
-sleep 2
-svc -u /service/dbus-mqtt-chain1 2>/dev/null || true
-svc -u /service/dbus-mqtt-chain2 2>/dev/null || true
-# === end dbus-mqtt-battery ===
-RCEOF
-        echo "Added rc.local boot persistence block"
-    fi
+    cat > /data/dbus-mqtt-battery/boot.sh <<'EOF'
+#!/bin/sh
+for service in /data/dbus-mqtt-battery/service/dbus-mqtt-chain*; do
+    [ -x "$service/run" ] || continue
+    ln -sfn "$service" "/service/${service##*/}"
+done
+EOF
+    chmod +x /data/dbus-mqtt-battery/boot.sh
+    python3 - <<'PYBOOT'
+from pathlib import Path
+path = Path('/data/rc.local')
+text = path.read_text() if path.exists() else '#!/bin/sh\n'
+# Replace only the installer-owned old two-chain block.
+start = text.find('# === dbus-mqtt-battery service persistence ===')
+end_marker = '# === end dbus-mqtt-battery ==='
+end = text.find(end_marker, start) if start >= 0 else -1
+if end >= 0:
+    text = text[:start] + text[end + len(end_marker):]
+command = '/data/dbus-mqtt-battery/boot.sh'
+lines = [line for line in text.splitlines() if line != command]
+index = next((i for i, line in enumerate(lines) if line.strip() == 'exit 0'), len(lines))
+lines.insert(index, command)
+path.write_text('\n'.join(lines) + '\n')
+path.chmod(path.stat().st_mode | 0o111)
+PYBOOT
 }
 
 # Main execution
@@ -131,6 +143,7 @@ case "$scriptAction" in
         createChainServices
         ensureRcLocalPersistence
         echo "  svstat /service/dbus-mqtt-chain*"
+        endScript
         ;;
     UNINSTALL)
         echo "Removing dbus-mqtt-battery services..."
@@ -138,14 +151,16 @@ case "$scriptAction" in
             serviceName="dbus-mqtt-chain${i}"
             baseDir="/data/dbus-mqtt-battery/service/${serviceName}"
             if [ -L "/service/$serviceName" ] || [ -d "/service/$serviceName" ]; then
-                svc -d "/service/$serviceName" 2>/dev/null || true
-                svc -u "/service/$serviceName" 2>/dev/null || true
-                rm -f "/service/$serviceName"
+                svc -dx "/service/$serviceName" "/service/$serviceName/log" 2>/dev/null || true
+                if [ -L "/service/$serviceName" ]; then
+                    rm -f "/service/$serviceName"
+                fi
                 rm -rf "$baseDir"
                 echo "  Removed $serviceName"
             fi
         done
         # Note: We don't stop the log services here as SetupHelper handles that
+        endScript
         ;;
     *)
         # CHECK action and no-arg help fall through to here

@@ -19,21 +19,35 @@ echo "$SEPARATOR"
 echo "SSH Host: $SSH_HOST"
 echo ""
 
-# Stop chain services before replacing files: they run from this directory,
-# and rm -rf while supervised leaves orphan supervises watching deleted dirs
+# Stop chain processes while retaining the supervisors and their directory inodes.
 echo ">>> Stopping services..."
-ssh "$SSH_HOST" "svc -dx /service/dbus-mqtt-chain1 2>/dev/null || true; svc -dx /service/dbus-mqtt-chain2 2>/dev/null || true"
+ssh "$SSH_HOST" 'for service in /service/dbus-mqtt-chain*; do
+    [ ! -d "$service" ] || svc -d "$service"
+done'
 
 # Download and install
 echo ">>> Downloading latest version..."
-ssh "$SSH_HOST" 'rm -rf /data/dbus-mqtt-battery && \
-cd /data && \
-wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/main.tar.gz | tar -xzf --exclude=build - && \
-mv dbus-mqtt-battery-main dbus-mqtt-battery && \
-chmod +x /data/dbus-mqtt-battery/setup'
+ssh "$SSH_HOST" 'sh -s -- victron-venus/dbus-mqtt-battery /data/dbus-mqtt-battery' <<'REMOTE_STAGE'
+set -eu
+repository=$1
+destination=$2
+package=${repository##*/}
+staging=$(mktemp -d)
+trap 'rm -rf "$staging"' EXIT HUP INT TERM
+wget -qO "$staging/source.tar.gz" "https://github.com/$repository/archive/main.tar.gz"
+tar -xzf "$staging/source.tar.gz" -C "$staging"
+[ -f "$staging/$package-main/setup" ]
+[ -f "$staging/$package-main/$package.py" ]
+mkdir -p "$destination"
+cp -R "$staging/$package-main/." "$destination/"
+chmod +x "$destination/setup"
+REMOTE_STAGE
 
 echo ">>> Running setup install..."
 ssh "$SSH_HOST" '/data/dbus-mqtt-battery/setup install'
+ssh "$SSH_HOST" 'for service in /service/dbus-mqtt-chain*; do
+    [ ! -d "$service" ] || svc -u "$service/log" "$service"
+done'
 
 # Restart PackageManager to discover package
 echo ">>> Restarting PackageManager..."

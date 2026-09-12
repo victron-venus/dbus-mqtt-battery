@@ -129,3 +129,24 @@ def test_all_lost_or_explicitly_offline_modules_fail_closed(battery_service):
         battery.update("online", "ON")
     service.update()
     assert_unavailable(service, 2)
+
+
+def test_soc_warning_logs_transitions_and_two_minute_reminders(
+    battery_service, monkeypatch, caplog
+):
+    _clock, _client, service = battery_service
+    now = [1000.0]
+    monkeypatch.setitem(service._update_soc_alarm.__globals__, "time", lambda: now[0])
+    with caplog.at_level("INFO", logger="MqttBattery"):
+        for _ in range(60):
+            service._update_soc_alarm({"soc": 10})
+            now[0] += 2
+        assert len(caplog.records) == 1
+        service._update_soc_alarm({"soc": 10})
+        assert len(caplog.records) == 2
+        service._update_soc_alarm({"soc": 1})
+        assert service._dbusservice["/Alarms/LowSoc"] == 2
+        assert len(caplog.records) == 3
+        service._update_soc_alarm({"soc": 80})
+        assert service._dbusservice["/Alarms/LowSoc"] == 0
+        assert "cleared" in caplog.records[-1].message

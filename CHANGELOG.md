@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.5] - 2026-09-12
+
+### Fixed
+- Log persistent BMS alarm states on transitions and bounded reminders instead of every poll.
+- Restore every configured MQTT chain service after reboot, including installations with more than two chains.
+- Preserve persistent supervisor directories and place boot restoration before the existing `rc.local` exit.
+- Finalize SetupHelper installation so PackageManager records the installed release.
+
 ## [2.7.4] - 2026-09-12
 
 ### Fixed
