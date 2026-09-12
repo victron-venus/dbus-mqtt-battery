@@ -65,10 +65,11 @@ PackageManager discovers packages by scanning `/data/` for directories containin
 - Creates chain services (`dbus-mqtt-chain1`, `dbus-mqtt-chain2`, etc.) based on configuration
 - Copies Python scripts to `/data/dbus-mqtt-battery/`
 
-The `gitHubInfo` file tells PackageManager where to download from:
+The shipped `gitHubInfo` file tracks the `main` branch for PackageManager updates:
 ```
-victron-venus:latest
+victron-venus:main
 ```
+For the published v2.7.3 package, use the release archive in the CLI instructions below. The historical `latest` Git tag is not the latest GitHub release.
 ### Uninstall
 
 Via PackageManager: Settings → PackageManager → dbus-mqtt-battery → Uninstall
@@ -80,15 +81,14 @@ ssh Cerbo '/data/dbus-mqtt-battery/setup uninstall'
 
 ### Option 2: CLI Install (for GUI v2 users)
 
-If you're using GUI v2 (where PackageManager menu is not available), install via SSH:
+If you're using GUI v2 (where PackageManager menu is not available), install the published v2.7.3 archive via SSH. It extracts directly into `dbus-mqtt-battery/`:
 
 ```bash
 ssh Cerbo
 
 # Download and install
 cd /data && rm -rf dbus-mqtt-battery
-wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/archive/latest.tar.gz | tar -xzf -
-mv dbus-mqtt-battery-latest dbus-mqtt-battery
+wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/releases/download/v2.7.3/dbus-mqtt-battery-v2.7.3.tar.gz | tar -xzf -
 chmod +x /data/dbus-mqtt-battery/setup
 
 # Configure (optional, before install)
@@ -99,7 +99,7 @@ echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries        # Batteries per
 # Install
 /data/dbus-mqtt-battery/setup install
 
-# Update (re-run same commands)
+# Update: select the desired version from GitHub Releases and use its archive URL
 # Uninstall
 /data/dbus-mqtt-battery/setup uninstall
 ```
