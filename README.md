@@ -160,3 +160,25 @@ For issues specific to:
 - **This project**: Open an issue in this repository
 
 **Note:** This is a community project and is not affiliated with Victron Energy.
+
+## Venus OS runtime and installation notes
+
+A series string is available only while every configured BMS reports a fresh,
+finite voltage and remains online. Availability or SoC messages cannot keep an
+old voltage fresh. If any module disappears, the aggregate marks `/Connected=0`,
+invalidates DC measurements and SoC, and sets charge/discharge permissions and
+DVCC current limits to zero until the complete string recovers. Configure the
+actual number of BMS units; an overstated count now correctly remains offline.
+
+Low-SoC alarms still update each poll. Logs record alarm transitions and one
+reminder every two minutes, avoiding the previous warning every two seconds.
+
+SetupHelper uses the configured `cellsPerBms` in each runner. Persistent runners
+live under `/data`; `boot.sh` restores every installed chain, including chains
+above two, before an existing `exit 0` in `/data/rc.local`. Native `multilog` keeps
+four 25 KB rotated files plus the current file per chain. Install the shared
+`dbus_shared` package alongside this repository before enabling the services.
+
+Hardware-free tests cover complete-series availability, stale voltage, invalid
+DVCC output, alarm log throttling, and existing calculation/control behavior.
+They do not exercise physical batteries or charger responses.

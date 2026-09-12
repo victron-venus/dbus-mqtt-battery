@@ -142,6 +142,8 @@ class DbusAggregateService:
         self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
         self.last_dvcc_log = 0.0
+        self._soc_alarm_log_state = None
+        self._soc_alarm_log_time = 0.0
         self._comm_alarm_active = False  # For log-on-transition of CommunicationError
 
         service_name = f"com.victronenergy.battery.{service_suffix}"
@@ -508,16 +510,25 @@ class DbusAggregateService:
             self._dbusservice["/System/MaxTemperatureCellId"] = data.get("max_temp_id", 1)
 
     def _update_soc_alarm(self, data: dict[str, Any]):
-        """Update low state-of-charge alarm."""
+        """Publish every sample; log transitions and a two-minute reminder."""
         soc = data.get("soc", 100)
         if soc <= self.config.battery.alarm_low_soc_critical:
-            self._dbusservice[ALARM_PATH_LOW_SOC] = 2
-            logger.warning("ALARM: Critical Low SoC (%s%%)", soc)
+            severity = 2
         elif soc <= self.config.battery.alarm_low_soc:
-            self._dbusservice[ALARM_PATH_LOW_SOC] = 1
-            logger.warning("WARNING: Low SoC (%s%%)", soc)
+            severity = 1
         else:
-            self._dbusservice[ALARM_PATH_LOW_SOC] = 0
+            severity = 0
+        self._dbusservice[ALARM_PATH_LOW_SOC] = severity
+        now = time()
+        previous = getattr(self, "_soc_alarm_log_state", None)
+        last_log = getattr(self, "_soc_alarm_log_time", 0.0)
+        if severity != previous or (severity and now - last_log >= 120):
+            if severity:
+                logger.warning("%s: Low SoC (%s%%)", "ALARM" if severity == 2 else "WARNING", soc)
+            elif previous:
+                logger.info("Low SoC alarm cleared (%s%%)", soc)
+            self._soc_alarm_log_time = now
+        self._soc_alarm_log_state = severity
 
     def _update_low_cell_voltage_alarm(self, min_cell, min_cell_id):
         """Update low cell voltage alarm."""
