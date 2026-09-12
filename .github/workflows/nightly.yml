@@ -14,15 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Create PackageManager archive
-        run: |
-          PKG_NAME="dbus-mqtt-battery"
-          ARCHIVE="${PKG_NAME}-nightly.tar.gz"
-          mkdir -p "${PKG_NAME}"
-          cp dbus-mqtt-battery.py "${PKG_NAME}/" 2>/dev/null || true
-          cp setup gitHubInfo version "${PKG_NAME}/" 2>/dev/null || true
-          tar -czf "$ARCHIVE" "${PKG_NAME}/"
-          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_OUTPUT
+      - name: Create complete PackageManager archive
+        run: python3 scripts/build_release.py nightly
 
       - name: Create GitHub Nightly Release
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
@@ -34,6 +27,7 @@ jobs:
             Commit: ${{ github.sha }}
           prerelease: true
           overwrite_files: true
-          files: dbus-mqtt-battery-nightly.tar.gz
+          files: dist/*
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

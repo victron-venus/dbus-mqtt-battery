@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.7.3] - 2026-09-12
+
+### Fixed
+- Expire each aggregate telemetry field independently after 60 seconds; unrelated MQTT updates cannot preserve stale current or power.
+- Include the runtime package and DVCC module in release archives, with SHA256 checksums and no sibling `dbus_shared` checkout required.
+
 ### Added
 - Circuit breaker around the poll loop: a hung `service.update()` call is bounded by a 10s SIGALRM timeout; after 3 consecutive timeouts the breaker opens for 60s before retrying (half-open)
 - `/Alarms/CommunicationError` (0=OK, 2=alarm) and `/System/StaleData` now reflect MQTT data freshness — set when no MQTT message arrives for more than `STALE_TIMEOUT` (60s) or when no battery data is valid

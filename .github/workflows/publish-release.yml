@@ -1,49 +1,31 @@
----
 name: Publish Release Assets
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-    - name: Checkout
-      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        fetch-depth: 0
-
-    - name: Create PackageManager archive
-      run: |
-        PKG_NAME="dbus-mqtt-battery"
-        ARCHIVE="${PKG_NAME}-${GITHUB_REF#refs/tags/}.tar.gz"
-        mkdir -p "${PKG_NAME}"
-        cp dbus-mqtt-battery.py "${PKG_NAME}/"
-        cp setup gitHubInfo version "${PKG_NAME}/" 2>/dev/null || true
-        tar -czf "$ARCHIVE" "${PKG_NAME}/"
-        echo "ARCHIVE=$ARCHIVE" >> $GITHUB_OUTPUT
-
-    - name: Detect Prerelease
-      id: detect
-      run: |
-        TAG="${GITHUB_REF#refs/tags/}"
-        if [[ "$TAG" =~ -(alpha|beta|rc)\.[0-9]+ || "$TAG" =~ - ]]; then
-          echo "is_prerelease=true" >> $GITHUB_OUTPUT
-        else
-          echo "is_prerelease=false" >> $GITHUB_OUTPUT
-        fi
-
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
-      with:
-        body_path: release.txt
-        files: ${{ steps.archive.outputs.ARCHIVE }}
-        prerelease: ${{ steps.detect.outputs.is_prerelease == 'true' }}
-        generate_release_notes: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Build complete runtime archive
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python3 scripts/build_release.py "$RELEASE_TAG"
+      - name: Verify checksum
+        working-directory: dist
+        run: sha256sum --check ./*.sha256
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
