@@ -142,7 +142,7 @@ class DbusAggregateService:
         self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
         self.last_dvcc_log = 0.0
-        self._soc_alarm_log_state = None
+        self._soc_alarm_log_state: int | None = None
         self._soc_alarm_log_time = 0.0
         self._comm_alarm_active = False  # For log-on-transition of CommunicationError
 
