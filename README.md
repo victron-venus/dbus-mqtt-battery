@@ -36,6 +36,10 @@ This repository provides automated build archives for Victron Venus OS installat
 
 Each ESP32 aggregate reading (voltage, current, power, state of charge, and capacity) expires independently after 60 seconds. If one aggregate topic stops updating, the service falls back to current per-BMS readings for that field; updates on other topics cannot keep the old value active. Fresh zero readings remain valid. Invalid or non-finite aggregate payloads do not refresh telemetry.
 
+Each configured series BMS must also supply fresh voltage and keep every live measurement it has published (current, power, SoC, cell voltages and temperatures) within the same 60-second window. Status messages, capacity and cycle counters cannot refresh these measurements. Optional sensors that have never been published remain optional; binary charge/discharge flags stay latched while telemetry is fresh because they may only be published on change.
+
+At startup, or when any configured BMS is missing, explicitly offline or stale, the chain reports disconnected with communication/internal-failure alarms, clears its aggregate electrical readings and publishes zero charge/discharge permissions and current limits. A missing series module cannot disappear from the safety calculation. Operation resumes when the entire configured chain is fresh again, while preserving BMS charge/discharge blocks. Check the configured battery count and publish intervals if the chain remains unavailable.
+
 ## Completed Features
 
 - ✅ **CI/CD Releases & Nightly Builds**: Venus OS installer tarball packaging configured for automated releases

@@ -148,6 +148,7 @@ class DbusAggregateService:
         self._dbusservice = VeDbusService(service_name, get_bus(), register=False)
 
         self._setup_paths()
+        self._set_unavailable(None)
         self._dbusservice.register()
         logger.info("D-Bus service registered: %s", service_name)
         logger.info(
@@ -332,22 +333,62 @@ class DbusAggregateService:
         if stale != self._comm_alarm_active:
             self._comm_alarm_active = stale
             if stale:
-                logger.error("ALARM: No MQTT data received for more than %ss", STALE_TIMEOUT)
+                logger.error(
+                    "ALARM: BMS telemetry is missing, offline or older than %ss", STALE_TIMEOUT
+                )
             else:
-                logger.info("MQTT data fresh again, CommunicationError cleared")
+                logger.info("All configured BMS telemetry is fresh, CommunicationError cleared")
+
+    def _update_module_status(self, data: dict[str, Any] | None) -> None:
+        """Publish counts from the same snapshot used for charge permissions."""
+        counts = data or {
+            "modules_online": 0,
+            "modules_offline": self.mqtt.battery_count,
+            "modules_blocking_charge": self.mqtt.battery_count,
+            "modules_blocking_discharge": self.mqtt.battery_count,
+        }
+        for suffix, key in (
+            ("Online", "modules_online"),
+            ("Offline", "modules_offline"),
+            ("BlockingCharge", "modules_blocking_charge"),
+            ("BlockingDischarge", "modules_blocking_discharge"),
+        ):
+            self._dbusservice[f"/System/NrOfModules{suffix}"] = counts[key]
+
+    def _set_unavailable(self, data: dict[str, Any] | None) -> None:
+        """Fail closed until the entire configured series chain is fresh."""
+        self._dbusservice["/Connected"] = 0
+        self._set_communication_error(True)
+        self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 2
+        self._update_module_status(data)
+        for path in (
+            "/Io/AllowToCharge",
+            "/Io/AllowToDischarge",
+            "/Info/MaxChargeCurrent",
+            "/Info/MaxDischargeCurrent",
+        ):
+            self._dbusservice[path] = 0
+        for path in (
+            PATH_DC_VOLTAGE,
+            PATH_DC_CURRENT,
+            PATH_DC_POWER,
+            "/Dc/0/Temperature",
+            "/Soc",
+            "/Capacity",
+            PATH_TIME_TO_GO,
+        ):
+            self._dbusservice[path] = None
 
     def update(self):
         """Update D-Bus values from MQTT data"""
         data = self.mqtt.get_aggregate_data()
-        if not data:
-            self._dbusservice["/Connected"] = 0
-            self._set_communication_error(True)
+        if not data or not data["data_complete"]:
+            self._set_unavailable(data)
             return
 
         self._dbusservice["/Connected"] = 1
 
-        # BMS communication staleness (any subscribed MQTT topic)
-        self._set_communication_error((time() - self.mqtt.last_message_time) > STALE_TIMEOUT)
+        self._set_communication_error(False)
 
         # DC measurements
         self._dbusservice[PATH_DC_VOLTAGE] = round(data["voltage"], 2)
@@ -371,18 +412,7 @@ class DbusAggregateService:
         self._update_temperature_paths(data)
 
         # Modules status
-        valid_count = sum(1 for b in self.mqtt.batteries.values() if b.is_valid())
-        online_count = data.get("modules_online", valid_count)
-        offline_count = data.get("modules_offline", 0)
-        blocking_charge = data.get("modules_blocking_charge", 0)
-        blocking_discharge = data.get("modules_blocking_discharge", 0)
-
-        self._dbusservice["/System/NrOfModulesOnline"] = online_count
-        self._dbusservice["/System/NrOfModulesOffline"] = (
-            self.mqtt.battery_count - valid_count + offline_count
-        )
-        self._dbusservice["/System/NrOfModulesBlockingCharge"] = blocking_charge
-        self._dbusservice["/System/NrOfModulesBlockingDischarge"] = blocking_discharge
+        self._update_module_status(data)
 
         # History
         self._dbusservice["/History/ChargeCycles"] = data["cycles"]
