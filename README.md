@@ -70,6 +70,7 @@ The shipped `gitHubInfo` file tracks the `main` branch for PackageManager update
 victron-venus:main
 ```
 For the published v2.7.3 package, use the release archive in the CLI instructions below. The historical `latest` Git tag is not the latest GitHub release.
+
 ### Uninstall
 
 Via PackageManager: Settings → PackageManager → dbus-mqtt-battery → Uninstall
