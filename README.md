@@ -73,7 +73,7 @@ The shipped `gitHubInfo` file tracks the `main` branch for PackageManager update
 ```
 victron-venus:main
 ```
-For the v2.7.4 package, use the release archive in the CLI instructions below. The historical `latest` Git tag is not the latest GitHub release.
+For the v2.7.5 package, use the release archive in the CLI instructions below. The historical `latest` Git tag is not the latest GitHub release.
 
 ### Uninstall
 
@@ -86,14 +86,19 @@ ssh Cerbo '/data/dbus-mqtt-battery/setup uninstall'
 
 ### Option 2: CLI Install (for GUI v2 users)
 
-If you're using GUI v2 (where PackageManager menu is not available), install the v2.7.4 archive via SSH. It extracts directly into `dbus-mqtt-battery/`:
+If you're using GUI v2 (where PackageManager menu is not available), install the v2.7.5 archive via SSH. It extracts directly into `dbus-mqtt-battery/`. Back up the existing installation and settings first. Stop the chain processes before extracting over the existing directory; retain the directory itself and its supervisor state:
 
 ```bash
 ssh Cerbo
 
 # Download and install
-cd /data && rm -rf dbus-mqtt-battery
-wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/releases/download/v2.7.4/dbus-mqtt-battery-v2.7.4.tar.gz | tar -xzf -
+cd /data
+for service in /service/dbus-mqtt-chain*; do
+    [ ! -d "$service" ] || svc -d "$service"
+done
+# Confirm the existing chain processes are down before continuing.
+svstat /service/dbus-mqtt-chain* 2>/dev/null || true
+wget -qO - https://github.com/victron-venus/dbus-mqtt-battery/releases/download/v2.7.5/dbus-mqtt-battery-v2.7.5.tar.gz | tar -xzf -
 chmod +x /data/dbus-mqtt-battery/setup
 
 # Configure (optional, before install)
@@ -103,6 +108,9 @@ echo "4" > /data/setupOptions/dbus-mqtt-battery/batteries        # Batteries per
 
 # Install
 /data/dbus-mqtt-battery/setup install
+for service in /service/dbus-mqtt-chain*; do
+    [ ! -d "$service" ] || svc -u "$service/log" "$service"
+done
 
 # Update: select the desired version from GitHub Releases and use its archive URL
 # Uninstall
@@ -176,8 +184,9 @@ reminder every two minutes, avoiding the previous warning every two seconds.
 SetupHelper uses the configured `cellsPerBms` in each runner. Persistent runners
 live under `/data`; `boot.sh` restores every installed chain, including chains
 above two, before an existing `exit 0` in `/data/rc.local`. Native `multilog` keeps
-four 25 KB rotated files plus the current file per chain. Install the shared
-`dbus_shared` package alongside this repository before enabling the services.
+four 25 KB rotated files plus the current file per chain. The release includes
+its runtime helpers; no separate `dbus_shared` package is required. SetupHelper
+completion records the installed version for PackageManager.
 
 Hardware-free tests cover complete-series availability, stale voltage, invalid
 DVCC output, alarm log throttling, and existing calculation/control behavior.

@@ -143,6 +143,7 @@ case "$scriptAction" in
         createChainServices
         ensureRcLocalPersistence
         echo "  svstat /service/dbus-mqtt-chain*"
+        endScript
         ;;
     UNINSTALL)
         echo "Removing dbus-mqtt-battery services..."
@@ -159,6 +160,7 @@ case "$scriptAction" in
             fi
         done
         # Note: We don't stop the log services here as SetupHelper handles that
+        endScript
         ;;
     *)
         # CHECK action and no-arg help fall through to here
