@@ -8,10 +8,11 @@ and data aggregation from multiple batteries.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import re
 from threading import Lock
-from time import time
+from time import monotonic, time
 from typing import Any
 
 from .bms_data import STALE_TIMEOUT, BatteryData
@@ -66,7 +67,7 @@ class MqttBatteryClient:
         self.total_power: float = 0.0
         self.total_soc: float = 0.0
         self.total_capacity: float = 0.0
-        self.total_updated: float = 0.0
+        self._total_updated: dict[str, float] = {}
         # Track if ESP publishes current_total (some ESPHome configs don't)
         self.current_total_seen: bool = False
         self.soc_total_seen: bool = False
@@ -246,67 +247,72 @@ class MqttBatteryClient:
         Important: many ESPHome configs publish voltage_total but NOT current_total.
         In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
         """
-        if not ((time() - self.total_updated) < STALE_TIMEOUT and self.total_voltage > 0):
-            # No fresh ESP32 totals: derive everything from per-BMS sums
-            return (
-                sum(b["voltage"] for b in valid_batts),
-                sum(b["current"] for b in valid_batts) / len(valid_batts),
-                sum(b["power"] for b in valid_batts),
-                min(b["soc"] for b in valid_batts),
-                total_capacity_remaining,
-            )
+        with self._data_lock:
+            now = monotonic()
+            totals = {
+                name: getattr(self, name)
+                for name, updated in self._total_updated.items()
+                if 0 <= now - updated < STALE_TIMEOUT
+            }
 
-        voltage = self.total_voltage
-        if self.current_total_seen:
-            current = self.total_current
-            power = (
-                self.total_power
-                if self.total_power != 0
-                else self.total_voltage * self.total_current
-            )
+        voltage = totals.get("total_voltage", 0.0)
+        if voltage <= 0:
+            voltage = sum(b["voltage"] for b in valid_batts)
+        current = totals.get(
+            "total_current", sum(b["current"] for b in valid_batts) / len(valid_batts)
+        )
+        if "total_power" in totals:
+            power = totals["total_power"]
+        elif "total_current" in totals:
+            power = voltage * current
         else:
-            current = sum(b["current"] for b in valid_batts) / len(valid_batts)
             power = sum(b["power"] for b in valid_batts)
             if abs(power) < 1.0:
                 power = voltage * current
-        if self.soc_total_seen and self.total_soc > 0:
-            soc = self.total_soc
-            capacity = self.total_capacity if self.total_capacity > 0 else total_capacity_remaining
-        else:
+        soc = totals.get("total_soc", min(b["soc"] for b in valid_batts))
+        if soc < 0:
             soc = min(b["soc"] for b in valid_batts)
+        capacity = totals.get("total_capacity", total_capacity_remaining)
+        if capacity < 0:
             capacity = total_capacity_remaining
         return voltage, current, power, soc, capacity
 
     def _update_total(self, sensor_name: str, value: str) -> None:
-        """Update aggregate totals."""
+        """Refresh only the recognized aggregate field received in this message."""
+        fields = {
+            "voltage_total": "total_voltage",
+            "current_total": "total_current",
+            "power_total": "total_power",
+            "soc_total": "total_soc",
+            "capacity_total": "total_capacity",
+        }
+        attribute = fields.get(sensor_name)
+        if attribute is None:
+            return
         try:
             val = float(value)
-            if sensor_name == "voltage_total":
-                self.total_voltage = val
-            elif sensor_name == "current_total":
-                self.total_current = val
-                self.current_total_seen = True
-            elif sensor_name == "power_total":
-                self.total_power = val
-            elif sensor_name == "soc_total":
-                self.total_soc = val
-                self.soc_total_seen = True
-            elif sensor_name == "capacity_total":
-                self.total_capacity = val
-            self.total_updated = time()
         except (TypeError, ValueError):
-            pass
+            return
+        if not math.isfinite(val):
+            return
+        with self._data_lock:
+            setattr(self, attribute, val)
+            self._total_updated[attribute] = monotonic()
+            if attribute == "total_current":
+                self.current_total_seen = True
+            elif attribute == "total_soc":
+                self.soc_total_seen = True
 
     def get_aggregate_data(self) -> dict[str, Any] | None:
         """Get aggregated data from all batteries (thread-safe)."""
         # Copy battery data under lock to avoid race conditions with MQTT thread
         with self._data_lock:
-            valid_batts = [b for b in self.batteries.values() if b.is_valid()]
-            if not valid_batts:
+            valid_batteries = [b for b in self.batteries.values() if b.is_valid()]
+            if not valid_batteries:
                 return None
             # Copy volatile data from each battery
-            batt_snapshots = []
-            for b in valid_batts:
+            batt_snapshots: list[dict[str, Any]] = []
+            for b in valid_batteries:
                 with b.lock:
                     batt_snapshots.append(
                         {
