@@ -39,3 +39,8 @@ logs/
 *.backup
 *.local.py
 local_config.py
+
+# Local validation and candidate packaging
+.venv-ci/
+release-dist/
+bandit-results.json
