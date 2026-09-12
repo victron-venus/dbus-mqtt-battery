@@ -43,6 +43,6 @@ def build_archive(root: Path, tag: str, output: Path) -> Path:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tag")
-    parser.add_argument("--output", type=Path, default=Path("dist"))
     args = parser.parse_args()
-    print(build_archive(Path(__file__).resolve().parents[1], args.tag, args.output))
+    repository = Path(__file__).resolve().parents[1]
+    print(build_archive(repository, args.tag, repository / "dist"))
