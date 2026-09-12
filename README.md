@@ -24,7 +24,7 @@
 
 ## Release Channels & CI/CD
 
-This repository provides automated build archives for Victron Venus OS installations:
+This repository provides automated build archives for Victron Venus OS installations. Release archives contain the entrypoint, runtime package, DVCC module, SetupHelper script, and version metadata, with a separate SHA256 checksum. No sibling `dbus_shared` checkout is required. Venus OS platform libraries and the declared `paho-mqtt` dependency must be available on the device:
 
 - **Stable Releases**: Tagged as `vX.Y.Z` (e.g., `v1.0.0`). Contains packaged Venus OS installer tarballs (`dbus-mqtt-battery-*.tar.gz`).
 - **Pre-releases**: Tagged with `-rc.N` or `-beta.N`. Automatically flagged as Pre-release on GitHub Releases to isolate driver testing on Venus OS hardware.

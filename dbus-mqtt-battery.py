@@ -31,15 +31,6 @@ import sys
 from time import sleep, time
 from typing import Any
 
-# Add shared package to Python path FIRST
-sys.path.insert(
-    0,
-    os.path.join(
-        os.path.dirname(__file__),
-        "../dbus_shared",
-    ),
-)
-
 # Add Victron library path
 sys.path.insert(
     1,
@@ -49,7 +40,7 @@ sys.path.insert(
     ),
 )
 
-# Also add local package path SECOND so MQTT-specific code can override/shared package
+# Add the bundled runtime package path
 sys.path.insert(
     2,
     os.path.join(
@@ -58,32 +49,30 @@ sys.path.insert(
     ),
 )
 
-# Import shared components from dbus_shared
-from dbus_shared import (
-    PATH_DC_CURRENT,
-    PATH_DC_POWER,
-    PATH_DC_VOLTAGE,
-    PATH_TIME_TO_GO,
-    POLL_INTERVAL_MS,
-    VERSION,
-    create_poll_function,
-    get_bus,
-    register_signal_handlers,
-    run_main_loop,
-    setup_dbus_paths_common,
-    setup_dbus_paths_dc,
-    setup_main_loop,
-)
+# Import bundled D-Bus helpers
 from vedbus import VeDbusService
 
 # Import service-specific components from local package
 from dbus_mqtt_battery import (
     DVCC_CELLS_PER_BMS,
+    PATH_DC_CURRENT,
+    PATH_DC_POWER,
+    PATH_DC_VOLTAGE,
+    PATH_TIME_TO_GO,
+    POLL_INTERVAL_MS,
     STALE_TIMEOUT,
+    VERSION,
     Config,
     MqttBatteryClient,
+    create_poll_function,
+    get_bus,
     load_config,
+    register_signal_handlers,
+    run_main_loop,
     setup_dbus_paths_alarms,
+    setup_dbus_paths_common,
+    setup_dbus_paths_dc,
+    setup_main_loop,
 )
 
 # First-party imports (local modules)
