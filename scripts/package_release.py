@@ -13,17 +13,26 @@ import tarfile
 import tomllib
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import NotRequired, TypedDict
 
 
-def build_package(root: Path, version: str, channel: str, output: Path) -> list[Path]:
-    """Build reproducible archives and wheels, preserving committed version metadata."""
-    if not re.fullmatch(r"v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", version):
+class PackageConfig(TypedDict):
+    """Declared archive inputs and optional distribution build settings."""
+
+    name: str
+    include: NotRequired[list[str]]
+    source: NotRequired[bool]
+    wheel: NotRequired[bool]
+
+
+def validate_version(root: Path, version: str, channel: str) -> None:
+    """Require a safe version compatible with the committed runtime metadata."""
+    if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", version, re.ASCII):
         message = "Expected a semantic version without path or shell characters"
         raise ValueError(message)
     if channel not in {"nightly", "beta", "rc", "stable"}:
         message = "Unknown release channel"
         raise ValueError(message)
-    config = json.loads((root / ".release-package.json").read_text())
     policy = json.loads((root / ".release-policy.json").read_text())
     if policy.get("version_file") == "pyproject.toml":
         committed = tomllib.loads((root / "pyproject.toml").read_text())["project"][
@@ -39,10 +48,10 @@ def build_package(root: Path, version: str, channel: str, output: Path) -> list[
     ):
         message = "Candidate base version must match committed project metadata"
         raise ValueError(message)
-    output.mkdir(parents=True, exist_ok=True)
-    if any(output.iterdir()):
-        message = "Output directory must be empty to prevent stale release assets"
-        raise ValueError(message)
+
+
+def package_inputs(root: Path, config: PackageConfig) -> tuple[list[str], list[str]]:
+    """Select only declared Git-tracked files and require every native runtime input."""
     tracked = (
         subprocess.check_output(["git", "ls-files", "-z"], cwd=root)
         .decode()
@@ -69,57 +78,85 @@ def build_package(root: Path, version: str, channel: str, output: Path) -> list[
         if config.get("source", False)
         or any(name == item or name.startswith(item + "/") for item in includes)
     )
+    return tracked, selected
+
+
+def write_archive(root: Path, name: str, selected: list[str], archive: Path) -> None:
+    """Preserve native executable modes in a deterministic archive of regular files."""
+    with archive.open("wb") as destination:
+        with gzip.GzipFile(
+            filename="", mode="wb", fileobj=destination, mtime=0
+        ) as compressed:
+            with tarfile.open(fileobj=compressed, mode="w") as package:
+                for filename in selected:
+                    path = root / filename
+                    if path.is_symlink() or not path.is_file():
+                        message = f"Refusing non-regular runtime input: {filename}"
+                        raise ValueError(message)
+                    content = path.read_bytes()
+                    entry = tarfile.TarInfo(f"{name}/{filename}")
+                    entry.size = len(content)
+                    entry.mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+                    package.addfile(entry, io.BytesIO(content))
+
+
+def build_distributions(
+    root: Path,
+    config: PackageConfig,
+    tracked: list[str],
+    output: Path,
+    assets: list[Path],
+) -> list[Path]:
+    """Build wheels/sdists in an isolated tracked snapshot and check their metadata."""
+    # Backends may update tracked egg-info files; isolate all build writes.
+    with TemporaryDirectory(prefix="release-build-") as directory:
+        project = Path(directory) / config["name"]
+        project.mkdir()
+        for name in tracked:
+            source = root / name
+            if source.is_symlink():
+                message = f"Refusing symlink in distribution source: {name}"
+                raise ValueError(message)
+            if not source.exists() or ".egg-info" in name:
+                continue
+            destination = project / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        subprocess.run(
+            [sys.executable, "-m", "build", "--outdir", str(output), str(project)],
+            check=True,
+        )
+    distributions = sorted(output.glob("*.whl")) + sorted(output.glob("*.tar.gz"))
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "twine",
+            "check",
+            "--strict",
+            *[str(path) for path in distributions if path not in assets],
+        ],
+        check=True,
+    )
+    return sorted(set(assets + distributions))
+
+
+def build_package(root: Path, version: str, channel: str, output: Path) -> list[Path]:
+    """Build reproducible archives and wheels, preserving committed version metadata."""
+    validate_version(root, version, channel)
+    config: PackageConfig = json.loads((root / ".release-package.json").read_text())
+    output.mkdir(parents=True, exist_ok=True)
+    if any(output.iterdir()):
+        message = "Output directory must be empty to prevent stale release assets"
+        raise ValueError(message)
+    tracked, selected = package_inputs(root, config)
     assets = []
     if selected:
         archive = output / f"{config['name']}-{version}.tar.gz"
-        with archive.open("wb") as destination:
-            with gzip.GzipFile(
-                filename="", mode="wb", fileobj=destination, mtime=0
-            ) as compressed:
-                with tarfile.open(fileobj=compressed, mode="w") as package:
-                    for name in selected:
-                        path = root / name
-                        if path.is_symlink() or not path.is_file():
-                            message = f"Refusing non-regular runtime input: {name}"
-                            raise ValueError(message)
-                        content = path.read_bytes()
-                        entry = tarfile.TarInfo(f"{config['name']}/{name}")
-                        entry.size = len(content)
-                        entry.mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
-                        package.addfile(entry, io.BytesIO(content))
+        write_archive(root, config["name"], selected, archive)
         assets.append(archive)
     if config.get("wheel", False):
-        # Backends may update tracked egg-info files; isolate all build writes.
-        with TemporaryDirectory(prefix="release-build-") as directory:
-            project = Path(directory) / config["name"]
-            project.mkdir()
-            for name in tracked:
-                source = root / name
-                if source.is_symlink():
-                    message = f"Refusing symlink in distribution source: {name}"
-                    raise ValueError(message)
-                if not source.exists() or ".egg-info" in name:
-                    continue
-                destination = project / name
-                destination.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, destination)
-            subprocess.run(
-                [sys.executable, "-m", "build", "--outdir", str(output), str(project)],
-                check=True,
-            )
-        distributions = sorted(output.glob("*.whl")) + sorted(output.glob("*.tar.gz"))
-        subprocess.run(
-            [
-                sys.executable,
-                "-m",
-                "twine",
-                "check",
-                "--strict",
-                *[str(path) for path in distributions if path not in assets],
-            ],
-            check=True,
-        )
-        assets = sorted(set(assets + distributions))
+        assets = build_distributions(root, config, tracked, output, assets)
     if not assets:
         message = "No release assets were built"
         raise ValueError(message)
