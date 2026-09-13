@@ -1,0 +1,17 @@
+{
+  "name": "dbus-mqtt-battery",
+  "include": [
+    "dbus-mqtt-battery.py",
+    "dbus_mqtt_battery",
+    "dvcc.py",
+    "setup",
+    "gitHubInfo",
+    "version",
+    "qml",
+    "overlay-fs",
+    "pyproject.toml",
+    "uv.lock",
+    "README.md",
+    "LICENSE"
+  ]
+}

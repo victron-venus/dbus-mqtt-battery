@@ -17,7 +17,13 @@ def build_archive(root: Path, tag: str, output: Path) -> Path:
         raise ValueError("Release tag must match the committed version file")
     paths = [
         root / name
-        for name in ("dbus-mqtt-battery.py", "dvcc.py", "setup", "gitHubInfo", "version")
+        for name in (
+            "dbus-mqtt-battery.py",
+            "dvcc.py",
+            "setup",
+            "gitHubInfo",
+            "version",
+        )
     ]
     paths += sorted((root / "dbus_mqtt_battery").glob("*.py"))
     if (root / "dbus_mqtt_battery/__init__.py") not in paths:
@@ -26,7 +32,9 @@ def build_archive(root: Path, tag: str, output: Path) -> Path:
     archive = output / f"dbus-mqtt-battery-{tag}.tar.gz"
     with (
         archive.open("wb") as destination,
-        gzip.GzipFile(filename="", mode="wb", fileobj=destination, mtime=0) as compressed,
+        gzip.GzipFile(
+            filename="", mode="wb", fileobj=destination, mtime=0
+        ) as compressed,
         tarfile.open(fileobj=compressed, mode="w") as package,
     ):
         for path in sorted(paths):
@@ -36,7 +44,9 @@ def build_archive(root: Path, tag: str, output: Path) -> Path:
             entry.mode = 0o755 if path.name == "setup" else 0o644
             package.addfile(entry, io.BytesIO(content))
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    archive.with_suffix(archive.suffix + ".sha256").write_text(f"{digest}  {archive.name}\n")
+    archive.with_suffix(archive.suffix + ".sha256").write_text(
+        f"{digest}  {archive.name}\n"
+    )
     return archive
 
 

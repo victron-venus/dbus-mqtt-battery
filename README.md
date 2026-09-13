@@ -22,13 +22,15 @@
 
 ---
 
-## Release Channels & CI/CD
+<!-- ci-release-process:start -->
+## Release process
 
-This repository provides automated build archives for Victron Venus OS installations. Release archives contain the entrypoint, runtime package, DVCC module, SetupHelper script, and version metadata, with a separate SHA256 checksum. No sibling `dbus_shared` checkout is required. Venus OS platform libraries and the declared `paho-mqtt` dependency must be available on the device:
+See the [release strategy](RELEASING.md) for validation, nightly, beta, RC and stable promotion rules, and the [operator runbook](docs/release-workflow.md) for local commands.
+<!-- ci-release-process:end -->
 
-- **Stable Releases**: Tagged as `vX.Y.Z` (e.g., `v1.0.0`). Contains packaged Venus OS installer tarballs (`dbus-mqtt-battery-*.tar.gz`).
-- **Pre-releases**: Tagged with `-rc.N` or `-beta.N`. Automatically flagged as Pre-release on GitHub Releases to isolate driver testing on Venus OS hardware.
-- **Nightly Builds**: Built daily at 02:00 UTC. Generates a fresh `dbus-mqtt-battery-nightly.tar.gz` package published to the **[Nightly Build Release](https://github.com/victron-venus/dbus-mqtt-battery/releases/tag/nightly)**.
+## Runtime archive
+
+Release archives contain the entrypoint, runtime package, DVCC module, SetupHelper script, and version metadata, with a separate SHA256 checksum. No sibling `dbus_shared` checkout is required. Venus OS platform libraries and the declared `paho-mqtt` dependency must be available on the device.
 
 ---
 
@@ -42,7 +44,7 @@ At startup, or when any configured BMS is missing, explicitly offline or stale, 
 
 ## Completed Features
 
-- ✅ **CI/CD Releases & Nightly Builds**: Venus OS installer tarball packaging configured for automated releases
+- ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
 
 ---
 
