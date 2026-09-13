@@ -44,3 +44,7 @@ local_config.py
 .venv-ci/
 release-dist/
 bandit-results.json
+
+# Local coverage databases may contain absolute filesystem paths
+.coverage
+.coverage.*
