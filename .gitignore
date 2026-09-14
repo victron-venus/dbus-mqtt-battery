@@ -48,3 +48,7 @@ bandit-results.json
 # Local coverage databases may contain absolute filesystem paths
 .coverage
 .coverage.*
+# Frozen release overlays and final build staging
+.release-plan.json
+.release-inputs.json
+release-assets/
