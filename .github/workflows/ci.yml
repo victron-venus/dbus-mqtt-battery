@@ -15,7 +15,7 @@ jobs:
     name: CI
     uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@892eb9f882d8a67b2df1c9b63567f0d4845fcf20
     with:
-      python-version: '3.11'
+      python-version: '3.12.13'
       # Coverage gate disabled — package has no coverage instrumentation; add
       # --cov=dbus_mqtt_battery to the pytest args once coverage is added.
       coverage-threshold: 0
