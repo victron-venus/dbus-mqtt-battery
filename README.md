@@ -42,6 +42,22 @@ Each configured series BMS must also supply fresh voltage and keep every live me
 
 At startup, or when any configured BMS is missing, explicitly offline or stale, the chain reports disconnected with communication/internal-failure alarms, clears its aggregate electrical readings and publishes zero charge/discharge permissions and current limits. A missing series module cannot disappear from the safety calculation. Operation resumes when the entire configured chain is fresh again, while preserving BMS charge/discharge blocks. Check the configured battery count and publish intervals if the chain remains unavailable.
 
+## Local development
+
+The service runtime retains Python 3.7+ support. Development and release tooling
+use Python 3.11, matching CI; `.python-version` selects it for uv. The release
+packaging tests use the Python 3.11 standard-library `tomllib` module.
+
+```sh
+uv sync --locked --extra test
+uv run --locked --extra test python3 -m pytest tests -q
+uv build
+```
+
+`uv.lock` records the runtime dependency and development/test extras, including
+compatible dependency versions for older service interpreters. Device installation
+continues to use SetupHelper; the development Python selection does not change it.
+
 ## Completed Features
 
 - ✅ **Release packaging**: Candidate artifacts and checksums; see the [release strategy](RELEASING.md).
