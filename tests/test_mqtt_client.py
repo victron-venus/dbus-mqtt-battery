@@ -4,7 +4,7 @@
 
 import sys
 import types
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # Stub paho before importing the module under test
 _paho = types.ModuleType("paho.mqtt.client")
@@ -43,10 +43,9 @@ class TestMqttBatteryClientInit:
     def test_client_id_uses_pid(self):
         import os
 
-        client = make_client(topic_prefix="batt")
-        # client.client is the paho Client; verify pid appears in constructed client_id string
-        cid = client.client._client_id
-        assert str(os.getpid()) in (cid.decode() if isinstance(cid, bytes) else cid)
+        with patch("dbus_mqtt_battery.mqtt_client.mqtt.Client") as constructor:
+            make_client(topic_prefix="batt")
+        assert str(os.getpid()) in constructor.call_args.kwargs["client_id"]
 
 
 class TestOnMessageParsing:
@@ -226,3 +225,178 @@ class TestAggregateFreshness:
             client._update_total(f"{name}_total", "0")
         baseline = [{"voltage": 52, "current": -5, "power": -260, "soc": 70}]
         assert client._compute_electrical_totals(baseline, 196) == (52, 0, 0, 0, 0)
+
+
+class TestTemperatureGlobalIds:
+    """MQTTBATT-1: temperature global IDs use configured temps_per_bms stride.
+
+    Identities must stay collision-free and stable across mixed sensor counts,
+    arrival order, and a BMS going offline then rejoining — never recompute
+    stride from only the currently valid battery set. Undersized stride withholds
+    IDs (no silent renumber) while still exporting temperature extrema values.
+    """
+
+    @staticmethod
+    def _collect(client, valid_batts):
+        cells, temps, values, unambiguous = client._collect_cells_and_temps(valid_batts)
+        return cells, temps, values, unambiguous
+
+    @staticmethod
+    def _ids(temps):
+        return [gid for gid, _ in temps]
+
+    def test_four_temps_per_bms_unique_global_ids(self):
+        client = make_client(temps_per_bms=4)
+        valid_batts = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": {1: 20.0, 2: 21.0, 3: 22.0, 4: 23.0},
+            },
+            {
+                "battery_id": 2,
+                "cells": {},
+                "temperatures": {1: 24.0, 2: 25.0, 3: 26.0, 4: 27.0},
+            },
+        ]
+        _cells, temps, values, ok = self._collect(client, valid_batts)
+        ids = self._ids(temps)
+        assert ok is True
+        assert ids == [1, 2, 3, 4, 5, 6, 7, 8]
+        assert len(ids) == len(set(ids))
+        assert min(values) == 20.0 and max(values) == 27.0
+
+    def test_two_temps_per_bms_keeps_legacy_stride(self):
+        client = make_client(temps_per_bms=2)
+        valid_batts = [
+            {"battery_id": 1, "cells": {}, "temperatures": {1: 20.0, 2: 21.0}},
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        _cells, temps, values, ok = self._collect(client, valid_batts)
+        assert ok is True
+        assert self._ids(temps) == [1, 2, 3, 4]
+        assert min(values) == 20.0 and max(values) == 25.0
+
+    def test_default_undersized_stride_withholds_ids_keeps_extrema(self):
+        """Supervisor repro: default temps_per_bms=2 with BMS1 indices 1..4 + BMS2 1..2.
+
+        Previously emitted duplicate global IDs 3/4. Must not renumber; withhold IDs
+        and still report min/max temperature values from every sensor via the real
+        get_aggregate_data export path (BatteryData.update live fields).
+        """
+        client = make_client()  # default temps_per_bms=2
+        assert client.temps_per_bms == 2
+
+        def seed(battery_id: int, temps: dict[int, float]) -> None:
+            b = client.batteries[battery_id]
+            b.update("voltage", 13.2)
+            b.update("current", 1.0)
+            b.update("power", 13.2)
+            b.update("soc", 80.0)
+            b.update("online", "ON")
+            for idx, temp in temps.items():
+                b.update(f"temperature_{idx}", temp)
+
+        seed(1, {1: 20.0, 2: 21.0, 3: 10.5, 4: 30.0})
+        seed(2, {1: 24.0, 2: 25.0})
+        assert client.batteries[1].is_valid()
+        assert client.batteries[2].is_valid()
+
+        data = client.get_aggregate_data()
+        assert data is not None
+        assert data["min_temp"] == 10.5
+        assert data["max_temp"] == 30.0
+        assert data["min_temp_id"] is None
+        assert data["max_temp_id"] is None
+
+        # Collect path agrees: IDs withheld, values retained.
+        snapshots = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": dict(client.batteries[1].temperatures),
+            },
+            {
+                "battery_id": 2,
+                "cells": {},
+                "temperatures": dict(client.batteries[2].temperatures),
+            },
+        ]
+        _cells, temps, values, ok = self._collect(client, snapshots)
+        assert ok is False
+        assert temps == []
+        assert sorted(values) == [10.5, 20.0, 21.0, 24.0, 25.0, 30.0]
+
+    def test_mixed_sensor_counts_stable_ids(self):
+        """BMS1 denser than BMS2: BMS2 keeps stride-sized slots (5,6 with stride 4)."""
+        client = make_client(temps_per_bms=4)
+        both = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": {1: 20.0, 2: 21.0, 3: 22.0, 4: 23.0},
+            },
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        _cells, temps, _values, ok = self._collect(client, both)
+        assert ok is True
+        by_id = {gid: val for gid, val in temps}
+        assert by_id[1] == 20.0 and by_id[4] == 23.0
+        assert by_id[5] == 24.0 and by_id[6] == 25.0
+        assert self._ids(temps) == [1, 2, 3, 4, 5, 6]
+
+    def test_bms_offline_does_not_renumber_remaining(self):
+        """Supervisor repro: after BMS1 drops out, BMS2 must keep IDs 5,6 not 3,4."""
+        client = make_client(temps_per_bms=4)
+        both = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": {1: 20.0, 2: 21.0, 3: 22.0, 4: 23.0},
+            },
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        _c, temps_both, _, ok1 = self._collect(client, both)
+        only_bms2 = [both[1]]
+        _c, temps_one, _, ok2 = self._collect(client, only_bms2)
+        assert ok1 and ok2
+        assert self._ids(temps_both) == [1, 2, 3, 4, 5, 6]
+        assert self._ids(temps_one) == [5, 6]
+        assert dict(temps_one) == {5: 24.0, 6: 25.0}
+
+    def test_arrival_order_does_not_change_ids(self):
+        """Sparse BMS2 first, then dense BMS1: configured stride keeps BMS2 at 5,6."""
+        client = make_client(temps_per_bms=4)
+        bms2_only = [
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        both = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": {1: 20.0, 2: 21.0, 3: 22.0, 4: 23.0},
+            },
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        _c, first, _, _ = self._collect(client, bms2_only)
+        _c, second, _, _ = self._collect(client, both)
+        assert self._ids(first) == [5, 6]
+        assert dict(first) == {5: 24.0, 6: 25.0}
+        assert dict(second)[5] == 24.0 and dict(second)[6] == 25.0
+
+    def test_bms_rejoin_keeps_same_ids(self):
+        client = make_client(temps_per_bms=4)
+        both = [
+            {
+                "battery_id": 1,
+                "cells": {},
+                "temperatures": {1: 20.0, 2: 21.0, 3: 22.0, 4: 23.0},
+            },
+            {"battery_id": 2, "cells": {}, "temperatures": {1: 24.0, 2: 25.0}},
+        ]
+        only2 = [both[1]]
+        _c, a, _, _ = self._collect(client, both)
+        _c, b, _, _ = self._collect(client, only2)
+        _c, c, _, _ = self._collect(client, both)
+        assert self._ids(a) == self._ids(c) == [1, 2, 3, 4, 5, 6]
+        assert self._ids(b) == [5, 6]

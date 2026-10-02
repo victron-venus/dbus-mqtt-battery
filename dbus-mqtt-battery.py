@@ -504,10 +504,11 @@ class DbusAggregateService:
         # Temperature with IDs
         if data.get("min_temp") is not None:
             self._dbusservice["/System/MinCellTemperature"] = round(data["min_temp"], 1)
-            self._dbusservice["/System/MinTemperatureCellId"] = data.get("min_temp_id", 1)
+            # None when temps_per_bms is undersized (IDs withheld); never invent an ID.
+            self._dbusservice["/System/MinTemperatureCellId"] = data.get("min_temp_id")
         if data.get("max_temp") is not None:
             self._dbusservice["/System/MaxCellTemperature"] = round(data["max_temp"], 1)
-            self._dbusservice["/System/MaxTemperatureCellId"] = data.get("max_temp_id", 1)
+            self._dbusservice["/System/MaxTemperatureCellId"] = data.get("max_temp_id")
 
     def _update_soc_alarm(self, data: dict[str, Any]):
         """Publish every sample; log transitions and a two-minute reminder."""
@@ -819,6 +820,7 @@ def main():
         config.battery.capacity,
         config.battery.bms_first,
         config.battery.cells_per_bms,
+        config.battery.temps_per_bms,
     )
     if not mqtt_client.connect():
         logger.warning("Failed to connect to MQTT broker")

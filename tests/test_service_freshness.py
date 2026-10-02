@@ -150,3 +150,33 @@ def test_soc_warning_logs_transitions_and_two_minute_reminders(
         service._update_soc_alarm({"soc": 80})
         assert service._dbusservice["/Alarms/LowSoc"] == 0
         assert "cleared" in caplog.records[-1].message
+
+
+def test_undersized_temperature_stride_withholds_ids_on_real_export(battery_service):
+    _, client, service = battery_service
+    for battery in client.batteries.values():
+        refresh(battery)
+    client.batteries[1].update("temperature_3", 10.5)
+    client.batteries[1].update("temperature_4", 30.0)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Connected"] == 1
+    assert paths["/System/MinCellTemperature"] == 10.5
+    assert paths["/System/MaxCellTemperature"] == 30.0
+    assert paths["/System/MinTemperatureCellId"] is None
+    assert paths["/System/MaxTemperatureCellId"] is None
+
+
+def test_configured_temperature_stride_exports_distinct_sensor_ids(battery_service):
+    _, client, service = battery_service
+    client.temps_per_bms = 4
+    for battery in client.batteries.values():
+        refresh(battery)
+    client.batteries[1].update("temperature_4", 10.5)
+    client.batteries[2].update("temperature_1", 30.0)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/System/MinCellTemperature"] == 10.5
+    assert paths["/System/MaxCellTemperature"] == 30.0
+    assert paths["/System/MinTemperatureCellId"] == 4
+    assert paths["/System/MaxTemperatureCellId"] == 5

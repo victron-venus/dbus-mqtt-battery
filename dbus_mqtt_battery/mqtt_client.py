@@ -45,6 +45,7 @@ class MqttBatteryClient:
         installed_capacity: float = 280,
         bms_first: int = 1,
         cells_per_bms: int = 4,
+        temps_per_bms: int = 2,
     ) -> None:
         self.broker = broker
         self.port = port
@@ -54,6 +55,9 @@ class MqttBatteryClient:
         # MQTT topic index of first BMS for this chain (chain1: 1, chain2 with 2 BMS: 3 for bms3,bms4)
         self.bms_first = max(1, bms_first)
         self.cells_per_bms = cells_per_bms
+        # Stable temperature ID stride (mirrors cells_per_bms). Must be configured
+        # >= densest BMS sensor count; never derived from the current valid set.
+        self.temps_per_bms = max(1, temps_per_bms)
 
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
         self.batteries: dict[int, BatteryData] = {
@@ -196,11 +200,24 @@ class MqttBatteryClient:
 
     def _collect_cells_and_temps(
         self, valid_batts: list[dict[str, Any]]
-    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]]]:
-        """Collect cells and temperatures with global IDs from all battery snapshots."""
+    ) -> tuple[list[tuple[int, float]], list[tuple[int, float]], list[float], bool]:
+        """Collect cells and temperatures with global IDs from all battery snapshots.
+
+        Returns (cells_with_id, temps_with_id, all_temp_values, temp_ids_unambiguous).
+
+        Temperature global IDs use the configured ``temps_per_bms`` stride and are
+        never renumbered when a BMS drops out. When any sensor index exceeds that
+        stride (undersized config), IDs are omitted from the export so callers do
+        not publish ambiguous Min/MaxTemperatureCellId values, while raw
+        temperature values remain available for safety extrema.
+        """
         all_cells_with_id = []
-        all_temps_with_id = []
         cells_per_bms = self.cells_per_bms
+        temps_per_bms = self.temps_per_bms
+
+        pending_temps: list[tuple[int, int, float]] = []  # battery_id, temp_idx, temp
+        all_temp_values: list[float] = []
+        oversized = False
 
         for batt in valid_batts:
             for cell_idx, voltage in batt["cells"].items():
@@ -213,10 +230,41 @@ class MqttBatteryClient:
                     all_cells_with_id.append((global_id, voltage))
             for temp_idx, temp in batt["temperatures"].items():
                 if temp > -40:
-                    global_id = (batt["battery_id"] - 1) * 2 + temp_idx
-                    all_temps_with_id.append((global_id, temp))
+                    all_temp_values.append(temp)
+                    if temp_idx > temps_per_bms:
+                        oversized = True
+                        logger.error(
+                            "temperature index %s exceeds temps_per_bms=%s for battery %s; "
+                            "set temps_per_bms >= densest BMS sensor count "
+                            "(IDs withheld to avoid collisions; extrema values still computed)",
+                            temp_idx,
+                            temps_per_bms,
+                            batt["battery_id"],
+                        )
+                    else:
+                        pending_temps.append((batt["battery_id"], temp_idx, temp))
 
-        return all_cells_with_id, all_temps_with_id
+        all_temps_with_id: list[tuple[int, float]] = []
+        if oversized:
+            # Undersized stride: do not emit any temperature IDs (would collide /
+            # mix packs). Values remain in all_temp_values for extrema.
+            return all_cells_with_id, all_temps_with_id, all_temp_values, False
+
+        seen_ids: set[int] = set()
+        for battery_id, temp_idx, temp in pending_temps:
+            global_id = (battery_id - 1) * temps_per_bms + temp_idx
+            if global_id in seen_ids:
+                logger.error(
+                    "duplicate temperature global_id %s under temps_per_bms=%s; "
+                    "withholding temperature IDs (raise temps_per_bms)",
+                    global_id,
+                    temps_per_bms,
+                )
+                return all_cells_with_id, [], all_temp_values, False
+            seen_ids.add(global_id)
+            all_temps_with_id.append((global_id, temp))
+
+        return all_cells_with_id, all_temps_with_id, all_temp_values, True
 
     @staticmethod
     def _cell_extremes(
@@ -340,18 +388,29 @@ class MqttBatteryClient:
 
         # Collect all cells with global IDs: (global_cell_id, voltage)
         # Global ID = (bms_id - 1) * cells_per_bms + cell_idx
-        all_cells_with_id, all_temps_with_id = self._collect_cells_and_temps(valid_batts)
+        (
+            all_cells_with_id,
+            all_temps_with_id,
+            all_temp_values,
+            temp_ids_unambiguous,
+        ) = self._collect_cells_and_temps(valid_batts)
 
         # Find min/max cells
         min_cell_voltage, min_cell_id, max_cell_voltage, max_cell_id = self._cell_extremes(
             all_cells_with_id
         )
 
-        # Find min/max temperatures
-        min_temp_id: int = 1
-        max_temp_id: int = 1
-        if all_temps_with_id:
+        # Find min/max temperatures (values always from every sensor; IDs only
+        # when the configured stride cannot collide).
+        min_temp_id: int | None = 1
+        max_temp_id: int | None = 1
+        if all_temps_with_id and temp_ids_unambiguous:
             min_temp, min_temp_id, max_temp, max_temp_id = self._temp_extremes(all_temps_with_id)
+        elif all_temp_values:
+            min_temp = min(all_temp_values)
+            max_temp = max(all_temp_values)
+            min_temp_id = None
+            max_temp_id = None
         else:
             min_temp = sum(b["temperature"] for b in valid_batts) / len(valid_batts)
             max_temp = min_temp

@@ -214,3 +214,7 @@ completion records the installed version for PackageManager.
 Hardware-free tests cover complete-series availability, stale voltage, invalid
 DVCC output, alarm log throttling, and existing calculation/control behavior.
 They do not exercise physical batteries or charger responses.
+
+## Temperature sensor IDs (`temps_per_bms`)
+
+Global temperature IDs use `(battery_id - 1) * temps_per_bms + sensor_index` with a **configured** stride (default `2`). Set `temps_per_bms` in config or `--temps-per-bms` to at least the densest BMS temperature sensor index. An undersized stride does **not** renumber sensors; temperature IDs are withheld while min/max temperature **values** still use every sensor.
