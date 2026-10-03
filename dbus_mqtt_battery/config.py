@@ -15,6 +15,8 @@ Example config file:
     count = 4
     capacity = 280
     cells_per_bms = 4
+    temps_per_bms = 2
+    ; Must be >= densest per-BMS temperature sensor index (never shrink at runtime).
     bms_first = 1
 
     [dbus]
@@ -32,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Version
-VERSION = "2.7.6"
+VERSION = "2.7.7"
 
 # Default values
 DEFAULT_MQTT_BROKER = "localhost"
@@ -40,6 +42,7 @@ DEFAULT_MQTT_PORT = 1883
 DEFAULT_BATTERY_COUNT = 4
 DEFAULT_INSTALLED_CAPACITY = 280.0
 DEFAULT_CELLS_PER_BMS = 4
+DEFAULT_TEMPS_PER_BMS = 2
 DEFAULT_BMS_FIRST = 1
 DEFAULT_DEVICE_INSTANCE = 512
 DEFAULT_SERVICE_SUFFIX = "mqtt_chain"
@@ -95,6 +98,7 @@ class BatteryConfig:
     count: int = DEFAULT_BATTERY_COUNT
     capacity: float = DEFAULT_INSTALLED_CAPACITY
     cells_per_bms: int = DEFAULT_CELLS_PER_BMS
+    temps_per_bms: int = DEFAULT_TEMPS_PER_BMS
     bms_first: int = DEFAULT_BMS_FIRST
     alarm_low_soc: int = DEFAULT_ALARM_LOW_SOC
     alarm_low_soc_critical: int = DEFAULT_ALARM_LOW_SOC_CRITICAL
@@ -126,6 +130,11 @@ class Config:
     battery: BatteryConfig = field(default_factory=BatteryConfig)
     dbus: DbusConfig = field(default_factory=DbusConfig)
 
+    def validate(self) -> None:
+        """Raise ValueError for configuration that cannot export safe temperature IDs."""
+        if self.battery.temps_per_bms < 1:
+            raise ValueError("temps_per_bms must be >= 1")
+
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
         """Load configuration from INI file."""
@@ -146,6 +155,9 @@ class Config:
             battery.capacity = config.getfloat("battery", "capacity", fallback=battery.capacity)
             battery.cells_per_bms = config.getint(
                 "battery", "cells_per_bms", fallback=battery.cells_per_bms
+            )
+            battery.temps_per_bms = config.getint(
+                "battery", "temps_per_bms", fallback=battery.temps_per_bms
             )
             battery.bms_first = config.getint("battery", "bms_first", fallback=battery.bms_first)
             battery.alarm_low_soc = config.getint(
@@ -245,6 +257,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=argparse.SUPPRESS,
         help="Number of cells per BMS module (default: 4)",
+    )
+    battery_group.add_argument(
+        "--temps-per-bms",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="Configured temperature-ID stride per BMS (default: 2). Must be >= densest per-BMS sensor index; undersized configs withhold IDs instead of renumbering or emitting collisions.",
     )
     battery_group.add_argument(
         "--bms-first",
@@ -358,6 +376,8 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
         config.battery.capacity = args.capacity
     if hasattr(args, "cells_per_bms"):
         config.battery.cells_per_bms = args.cells_per_bms
+    if hasattr(args, "temps_per_bms"):
+        config.battery.temps_per_bms = args.temps_per_bms
     if hasattr(args, "bms_first"):
         config.battery.bms_first = args.bms_first
     if hasattr(args, "alarm_low_soc"):
@@ -391,6 +411,7 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
     if hasattr(args, "product_name"):
         config.dbus.product_name = args.product_name
 
+    config.validate()
     return config
 
 

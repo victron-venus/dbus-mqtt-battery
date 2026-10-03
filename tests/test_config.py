@@ -122,3 +122,20 @@ class TestAlarmDefaults:
         assert b.alarm_high_temp_critical == 55
         assert b.alarm_low_temp == 0
         assert b.alarm_low_temp_critical == -10
+
+
+def test_temperature_stride_file_and_cli_precedence(tmp_path):
+    config_path = tmp_path / "battery.ini"
+    config_path.write_text("[battery]\ntemps_per_bms = 4\n")
+    config = Config.from_file(config_path)
+    assert config.battery.temps_per_bms == 4
+    args = create_argument_parser().parse_args(["--temps-per-bms", "6"])
+    assert merge_config_and_args(config, args).battery.temps_per_bms == 6
+
+
+def test_temperature_stride_rejects_zero():
+    import pytest
+
+    args = create_argument_parser().parse_args(["--temps-per-bms", "0"])
+    with pytest.raises(ValueError, match="temps_per_bms"):
+        merge_config_and_args(Config(), args)
