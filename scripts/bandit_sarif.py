@@ -31,7 +31,9 @@ def convert(report: dict, tool_version: str) -> dict:
         line = finding["line_number"]
         if not isinstance(line, int) or isinstance(line, bool) or line < 1:
             raise ValueError("Bandit finding must have a positive line number")
-        level = {"LOW": "note", "MEDIUM": "warning", "HIGH": "error"}[finding["issue_severity"]]
+        level = {"LOW": "note", "MEDIUM": "warning", "HIGH": "error"}[
+            finding["issue_severity"]
+        ]
         if rule_id not in rules:
             rules[rule_id] = {
                 "id": rule_id,
@@ -47,7 +49,9 @@ def convert(report: dict, tool_version: str) -> dict:
                 "locations": [
                     {
                         "physicalLocation": {
-                            "artifactLocation": {"uri": quote(path.as_posix(), safe="/")},
+                            "artifactLocation": {
+                                "uri": quote(path.as_posix(), safe="/")
+                            },
                             "region": {"startLine": line},
                         }
                     }
