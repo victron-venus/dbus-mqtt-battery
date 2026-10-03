@@ -26,6 +26,29 @@ def make_client(**kwargs):
     return MqttBatteryClient(**defaults)
 
 
+def test_missing_optional_temperature_has_no_invented_sensor_ids():
+    client = make_client(battery_count=1)
+    battery = client.batteries[1]
+    for name, value in (
+        ("voltage", 13.2),
+        ("current", 1.0),
+        ("power", 13.2),
+        ("soc", 80.0),
+        ("online", "ON"),
+    ):
+        battery.update(name, value)
+    assert battery.is_valid()
+    assert not battery.temperatures
+    data = client.get_aggregate_data()
+    assert data is not None
+    assert data["min_temp_id"] is None
+    assert data["max_temp_id"] is None
+    battery.update("temperature", 27.0)
+    data = client.get_aggregate_data()
+    assert data["min_temp"] == data["max_temp"] == 27.0
+    assert data["min_temp_id"] == data["max_temp_id"] == 1
+
+
 class TestMqttBatteryClientInit:
     """Sanity checks for client construction."""
 

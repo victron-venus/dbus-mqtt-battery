@@ -402,8 +402,8 @@ class MqttBatteryClient:
 
         # Find min/max temperatures (values always from every sensor; IDs only
         # when the configured stride cannot collide).
-        min_temp_id: int | None = 1
-        max_temp_id: int | None = 1
+        min_temp_id: int | None = None
+        max_temp_id: int | None = None
         if all_temps_with_id and temp_ids_unambiguous:
             min_temp, min_temp_id, max_temp, max_temp_id = self._temp_extremes(all_temps_with_id)
         elif all_temp_values:
