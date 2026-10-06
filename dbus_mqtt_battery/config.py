@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Version
-VERSION = "2.7.8-beta.2"
+VERSION = "2.7.8"
 
 # Default values
 DEFAULT_MQTT_BROKER = "localhost"
