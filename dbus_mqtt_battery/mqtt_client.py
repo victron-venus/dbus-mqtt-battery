@@ -11,7 +11,6 @@ import logging
 import math
 import os
 import re
-from collections import deque
 from threading import RLock
 from time import monotonic, time
 from typing import Any
@@ -20,6 +19,7 @@ from .bms_data import STALE_TIMEOUT, BatteryData
 from .telemetry import decode_batteries, decode_header, merge_partial
 
 logger = logging.getLogger("MqttBattery")
+MAX_RETIRED_BOOT_IDS = 4096
 
 # Supported paho-mqtt versions
 try:
@@ -76,7 +76,7 @@ class MqttBatteryClient:
         self._has_full_snapshot = False
         self._boot_ready = False
         self.telemetry_partial = False
-        self._retired_boot_ids: deque[str] = deque(maxlen=16)
+        self._retired_boot_ids: set[str] = set()
 
         # Aggregate totals from ESP32
         self.total_voltage: float = 0.0
@@ -264,7 +264,17 @@ class MqttBatteryClient:
             ):
                 return
             if self._boot_id is not None and self._boot_id != boot_id:
-                self._retired_boot_ids.append(self._boot_id)
+                if len(self._retired_boot_ids) >= MAX_RETIRED_BOOT_IDS:
+                    # Never evict replay protection to admit a new producer.
+                    # Retain only the already accepted evidence and its expiry;
+                    # the current session can still send newer frames.
+                    reason = "Producer-session history full; restart driver to admit a new boot"
+                    if self.telemetry_error != reason:
+                        logger.warning("%s", reason)
+                    self.telemetry_error = reason
+                    self.telemetry_partial = True
+                    return
+                self._retired_boot_ids.add(self._boot_id)
                 self._boot_ready = False
             self._boot_id, self._sequence = boot_id, sequence
             if frame["ready"]:

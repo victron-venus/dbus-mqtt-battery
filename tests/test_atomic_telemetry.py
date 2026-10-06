@@ -73,6 +73,54 @@ def test_new_boot_does_not_accept_delayed_previous_session(receiver):
     assert not client.get_aggregate_data()["allow_discharge"]
 
 
+def test_old_boot_replay_is_rejected_after_more_than_sixteen_restarts(receiver):
+    now, client = receiver
+    first = telemetry_frame(boot_id="oldest-boot")
+    deliver_frame(client, first)
+    for index in range(1, 21):
+        now[0] = 100 + index
+        deliver_frame(client, telemetry_frame(boot_id=f"boot-{index}"))
+    now[0] = 150
+    deliver_frame(client, first)
+    assert client.get_aggregate_data()["oldest_sample_time"] == 120
+    assert client._boot_id == "boot-20"
+    now[0] = 180
+    assert client.get_aggregate_data() is None
+
+
+def test_session_history_saturation_preserves_expiry_veto_and_current_session(
+    receiver, monkeypatch
+):
+    now, client = receiver
+    monkeypatch.setattr("dbus_mqtt_battery.mqtt_client.MAX_RETIRED_BOOT_IDS", 2)
+    for index in range(3):
+        now[0] = 100 + index
+        frame = telemetry_frame(boot_id=f"boot-{index}")
+        frame["batteries"][0]["discharging"] = False
+        deliver_frame(client, frame)
+    now[0] = 110
+    deliver_frame(client, telemetry_frame(boot_id="overflow-boot"))
+    data = client.get_aggregate_data()
+    assert data["oldest_sample_time"] == 102
+    assert data["telemetry_partial"] and not data["allow_discharge"]
+    assert "history full" in data["missing_data"]
+    assert client._boot_id == "boot-2"
+    assert client._retired_boot_ids == {"boot-0", "boot-1"}
+    now[0] = 120
+    deliver_frame(client, telemetry_frame(boot_id="boot-0", seq=99))
+    assert client.get_aggregate_data()["oldest_sample_time"] == 102
+    now[0] = 162
+    deliver_frame(client, telemetry_frame(boot_id="another-overflow", seq=2))
+    assert client.get_aggregate_data() is None
+    assert client.batteries[1].discharging is False
+    assert client.batteries[1].oldest_sample_time == 102
+    now[0] = 170
+    deliver_frame(client, telemetry_frame(boot_id="boot-2", seq=2))
+    assert client.get_aggregate_data()["oldest_sample_time"] == 170
+    assert client.get_aggregate_data()["allow_discharge"]
+    assert len(client._retired_boot_ids) == 2
+
+
 @pytest.mark.parametrize(
     "change",
     [

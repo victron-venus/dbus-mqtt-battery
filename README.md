@@ -286,6 +286,12 @@ erase valid historical physical evidence. Incomplete frames without this metadat
 still fail closed. The masks describe four-cell BMS modules.
 
 Older/duplicate sequence numbers and retired boot sessions cannot renew freshness.
+A process retains up to 4096 retired producer-session IDs without evicting any.
+If that bound is reached, a different producer boot is rejected with an explicit
+restart-required diagnostic. Existing measurements and vetoes keep their original
+expiry, and the currently accepted boot may still publish newer frames. Restarting
+the driver admits a new boot but starts the documented new-process trust boundary;
+it deliberately does not preserve replay history across process restarts.
 A brief MQTT disconnect, producer offline notification or new producer boot keeps
 only unexpired prior physical evidence. After these events, no timestamp is
 renewed until a complete new frame arrives; no permission is inferred from an
