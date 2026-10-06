@@ -62,3 +62,22 @@ def deliver_frame(client, frame, *, retain=False):
             retain=retain,
         ),
     )
+
+
+def partial_frame(*, seq=2, boot_id="test-boot", mask=0, count=2):
+    """Drop selected physical evidence from the first BMS of a polling round."""
+    frame = telemetry_frame(seq=seq, boot_id=boot_id, count=count, ready=False)
+    for row in frame["batteries"]:
+        row.update(seen_mask=511, valid_mask=511, observed_age_ms=0)
+    row = frame["batteries"][0]
+    row.update(seen_mask=mask, valid_mask=mask, observed_age_ms=0 if mask else 60000)
+    row.update(age_ms=0 if mask == 511 else 60000, online=mask == 511)
+    for bit, field in enumerate(("voltage", "current", "soc", "temperature")):
+        if not mask & (1 << bit):
+            row[field] = None
+    for index in range(4):
+        if not mask & (1 << (index + 4)):
+            row["cells"][index] = None
+    if not mask & 256:
+        row.update(charging=None, discharging=None)
+    return frame

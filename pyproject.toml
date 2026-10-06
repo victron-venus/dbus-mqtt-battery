@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbus-mqtt-battery"
-version = "2.7.8-beta.1"
+version = "2.7.8-beta.2"
 requires-python = ">=3.12,<3.13"
 dependencies = ["paho-mqtt>=2.1.0"]
 

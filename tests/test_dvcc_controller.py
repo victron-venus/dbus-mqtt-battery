@@ -261,9 +261,10 @@ class TestDvccController(unittest.TestCase):  # pylint: disable=too-many-public-
 
         result = self.controller.calculate(data)
 
-        # With normal temp, SoC, and cell voltage 3.4V (which is below START_LIMIT 3.45V)
-        # All should give 100A, 120A, 100A, 100A -> min is 100A
-        self.assertEqual(result["ccl"], 100.0)
+        # A 300 mV spread is critical imbalance even at normal temperature.
+        # The old down-ramp hid this ceiling on the first calculation.
+        self.assertEqual(result["ccl"], 2.0)
+        self.assertIn("critical_imbalance", result["ccl_reason"])
         self.assertEqual(result["dcl"], 120.0)
         self.assertEqual(result["cvl"], 3.65 * 4)  # DVCC_CELL_MAX_VOLTAGE * cell_count
         self.assertIn("ccl_reason", result)

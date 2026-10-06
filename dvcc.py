@@ -13,7 +13,7 @@ This module has NO D-Bus or MQTT dependencies - pure Python for easy testing.
 
 from __future__ import annotations
 
-from time import time
+from time import monotonic
 
 # =============================================================================
 # CONFIGURATION DEFAULTS (can be overridden in constructor)
@@ -86,8 +86,8 @@ class DvccController:
         self.last_cvl = cell_max_voltage * cell_count
 
         # Rate limiting for smooth transitions
-        self.ccl_change_rate = 10.0  # Max A/s change for CCL (smoothing)
-        self.last_update_time = time()
+        self.ccl_change_rate = 10.0  # Max A/s increase; protective reductions are immediate
+        self.last_update_time = monotonic()
 
     def calculate_ccl_from_cell_voltage(self, max_cell_voltage: float | None) -> tuple[float, str]:
         """
@@ -320,20 +320,14 @@ class DvccController:
             dcl = min(dcl, self._max_discharge_current * 0.5)
             dcl_reason = f"hot_{max_temp:.1f}C"
 
-        # Apply rate limiting for smooth transitions
-        now = time()
-        dt = now - self.last_update_time
+        # Smooth increases only: never exceed a newly calculated safety ceiling.
+        now = monotonic()
+        dt = max(0.0, now - self.last_update_time)
         self.last_update_time = now
 
         max_change = self.ccl_change_rate * dt
         if ccl > self.last_ccl:
             ccl = min(ccl, self.last_ccl + max_change)
-        elif ccl < self.last_ccl:
-            # Allow faster reduction for safety
-            ccl = max(ccl, self.last_ccl - max_change * 2)
-
-        self.last_ccl = ccl
-        self.last_dcl = dcl
 
         # BMS blocks MUST be applied AFTER rate limiting
         # because rate limiting can increase values on first call
@@ -344,6 +338,7 @@ class DvccController:
         if not data.get("allow_discharge", True):
             dcl = 0.0
             dcl_reason = "bms_blocked"
+        self.last_ccl = ccl
         self.last_dcl = dcl
 
         # Calculate CVL (Charge Voltage Limit)

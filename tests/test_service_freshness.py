@@ -7,7 +7,7 @@ import types
 from pathlib import Path
 
 import pytest
-from battery_samples import deliver_frame, refresh_battery, telemetry_frame
+from battery_samples import deliver_frame, partial_frame, refresh_battery, telemetry_frame
 
 from dbus_mqtt_battery.mqtt_client import MqttBatteryClient
 
@@ -40,6 +40,7 @@ def make_battery_service(monkeypatch):
     now = [100.0]
     monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
     monkeypatch.setattr("dbus_mqtt_battery.mqtt_client.monotonic", lambda: now[0])
+    monkeypatch.setattr("dvcc.monotonic", lambda: now[0])
     fake_vedbus = types.ModuleType("vedbus")
     fake_vedbus.VeDbusService = FakeDbusService
     monkeypatch.setitem(sys.modules, "vedbus", fake_vedbus)
@@ -112,6 +113,7 @@ def test_missing_blocked_module_does_not_restore_charge_or_discharge(battery_ser
     assert service._dbusservice["/System/NrOfModulesOffline"] == 0
     client.batteries[2].update("charging", "ON")
     client.batteries[2].update("discharging", "ON")
+    now[0] += 1  # Charge permission recovers through the upward current ramp.
     service.update()
     assert service._dbusservice["/Info/MaxChargeCurrent"] > 0
     assert service._dbusservice["/Info/MaxDischargeCurrent"] > 0
@@ -289,3 +291,105 @@ def test_failed_calculation_flushes_a_safe_complete_dbus_batch(battery_service, 
     assert published["/Info/MaxChargeVoltage"] == 29.2
     assert published["/Soc"] is None
     assert published["/Info/TelemetryState"] == "STALE"
+
+
+def test_missing_poll_is_degraded_until_original_field_expiry(battery_service):
+    now, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    paths = service._dbusservice
+    limits = (paths["/Info/MaxChargeCurrent"], paths["/Info/MaxDischargeCurrent"])
+    now[0] = 110
+    deliver_frame(client, partial_frame())
+    service.update()
+    assert paths["/Info/TelemetryState"] == "DEGRADED"
+    assert paths["/Info/TelemetryPartial"] == 1
+    assert paths["/Info/DataComplete"] == 1
+    assert paths["/Info/DataAge"] == 10
+    assert paths["/Info/MissingData"]
+    assert (paths["/Info/MaxChargeCurrent"], paths["/Info/MaxDischargeCurrent"]) == limits
+    now[0] = 160
+    service.update()
+    assert paths["/Info/TelemetryState"] == "STALE"
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+    assert paths["/Info/MaxChargeVoltage"] == 29.2
+    deliver_frame(client, telemetry_frame(seq=3))
+    service.update()
+    assert paths["/Info/TelemetryState"] == "READY"
+    assert paths["/Info/MaxDischargeCurrent"] == 120
+
+
+def test_fresh_partial_low_cell_still_protects_and_cannot_regrant(battery_service):
+    _, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    frame = partial_frame(mask=16)
+    frame["batteries"][0]["cells"][0] = 2.5
+    deliver_frame(client, frame)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Info/TelemetryState"] == "PROTECTION"
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+    assert paths["/Io/AllowToDischarge"] == 0
+    assert paths["/Info/TelemetryPartial"] == 1
+    frame["seq"] = 3
+    frame["batteries"][0]["cells"][0] = 3.3
+    deliver_frame(client, frame)
+    service.update()
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+    deliver_frame(client, telemetry_frame(seq=4))
+    service.update()
+    assert paths["/Info/MaxDischargeCurrent"] == 120
+
+
+def test_brief_broker_disconnect_does_not_interrupt_valid_bms_limits(battery_service):
+    now, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    client._on_disconnect(None, None, 1)
+    now[0] = 110
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Info/TelemetryState"] == "DEGRADED"
+    assert paths["/Info/DataAge"] == 10
+    assert paths["/Info/MaxDischargeCurrent"] == 120
+    now[0] = 160
+    service.update()
+    assert paths["/Info/TelemetryState"] == "STALE"
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+
+
+@pytest.mark.parametrize("temperature", [-1, 60])
+def test_partial_thermal_stop_bypasses_ramp_immediately(battery_service, temperature):
+    now, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    assert service._dbusservice["/Info/MaxChargeCurrent"] > 0
+    frame = partial_frame(mask=8)
+    frame["batteries"][0]["temperature"] = temperature
+    now[0] += 1
+    deliver_frame(client, frame)
+    service.update()
+    assert service._dbusservice["/Info/MaxChargeCurrent"] == 0
+    assert service._dbusservice["/Io/AllowToCharge"] == 0
+    assert service.dvcc.last_ccl == 0
+    frame["seq"] = 3
+    frame["batteries"][0]["temperature"] = 25
+    deliver_frame(client, frame)
+    service.update()
+    assert service._dbusservice["/Info/MaxChargeCurrent"] == 0
+
+
+def test_positive_thermal_derating_is_an_immediate_ceiling(battery_service):
+    now, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    frame = partial_frame(mask=8)
+    frame["batteries"][0]["temperature"] = 47.5
+    now[0] += 0.01
+    deliver_frame(client, frame)
+    service.update()
+    thermal_ceiling, _ = service.dvcc.calculate_ccl_from_temperature(25, 47.5)
+    assert 0 < thermal_ceiling < 100
+    assert service._dbusservice["/Info/MaxChargeCurrent"] <= thermal_ceiling
+    assert service.dvcc.last_ccl <= thermal_ceiling

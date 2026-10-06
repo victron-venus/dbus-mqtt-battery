@@ -47,9 +47,9 @@ Release archives contain the entrypoint, runtime package, DVCC module, SetupHelp
 
 Each ESP32 aggregate reading (voltage, current, power, state of charge, and capacity) expires independently after 60 seconds. If one aggregate topic stops updating, the service falls back to current per-BMS readings for that field; updates on other topics cannot keep the old value active. Fresh zero readings remain valid. Invalid or non-finite aggregate payloads do not refresh telemetry.
 
-Each configured series BMS must also supply fresh voltage and keep every live measurement it has published (current, power, SoC, cell voltages and temperatures) within the same 60-second window. Status messages, capacity and cycle counters cannot refresh these measurements. Optional sensors that have never been published remain optional; binary charge/discharge flags stay latched while telemetry is fresh because they may only be published on change.
+Each configured series BMS must supply fresh voltage, current, SoC, all configured cell voltages, temperature and explicit permissions. Every required physical field expires independently within the same 60-second window. Atomic MOS status also expires independently; legacy binary permissions remain latched while measurements are fresh because old firmware publishes them only on change. Status, capacity and cycle counters cannot refresh electrical measurements.
 
-At startup, or when any configured BMS is missing, explicitly offline or stale, the chain reports disconnected with communication/internal-failure alarms, clears its aggregate electrical readings and publishes zero charge/discharge permissions and current limits. A missing series module cannot disappear from the safety calculation. Operation resumes when the entire configured chain is fresh again, while preserving BMS charge/discharge blocks. Check the configured battery count and publish intervals if the chain remains unavailable.
+At startup the chain reports disconnected with unknown readings and zero permissions/current limits until a complete physical frame arrives. A brief missing poll can use previously measured fields only until their original expiry. Invalid observed values and expired required fields fail closed; a missing series module cannot disappear from the safety calculation. See the readiness contract below.
 
 ## Local development
 
@@ -231,7 +231,7 @@ Solar chargers configured to require a BMS can also stop charging while no ready
 BMS is advertised. Initial charging after removal of the old BMS is not evidence
 that charging will continue throughout a long firmware upgrade.
 
-There are four `/Info/TelemetryState` values:
+There are five `/Info/TelemetryState` values:
 
 - `INITIALIZING`: no complete trustworthy snapshot has arrived in this process.
   Measurements are invalid (`None`), permissions and CCL/DCL are zero. CVL stays
@@ -243,12 +243,23 @@ There are four `/Info/TelemetryState` values:
 - `PROTECTION`: measurements are valid, but a real BMS veto or calculated
   voltage/temperature limit blocks charge or discharge. These blocks are never
   bypassed by startup timing or a communications grace period.
+- `DEGRADED`: a poll or transport connection is missing, but every required
+  physical field is still within its original 60-second deadline. Missing fields
+  and permissions are never refreshed by receipt of unrelated data. Newly seen
+  low cells, temperatures or MOS vetoes still tighten the actual DVCC limits;
+  partial frames cannot raise a previously published current limit or clear a
+  veto. A complete frame is required before starting from a cold process.
 - `STALE`: a previously ready process lost required telemetry. Measurements are
   invalid, CCL/DCL and permissions are zero, and the last CVL remains advertised
   so a previously selected controlling BMS still enforces the zero current limits.
 
+Calculated protective current reductions take effect immediately, including
+nonzero cell/temperature derating and hard zero limits. Only increases use the
+existing gradual CCL ramp, measured with a monotonic clock.
+
 The complete measurement/permission update uses one D-Bus `ItemsChanged` batch.
-`/Info/DataComplete`, `/Info/MissingData`, and `/Info/TelemetrySource` explain
+`/Info/DataComplete`, `/Info/MissingData`, `/Info/TelemetryPartial`, and
+`/Info/TelemetrySource` explain
 readiness. `/Info/DataAge` measures the oldest required physical sample;
 `/Info/DataTimeout` is 60 seconds. `/Info/LastMeasurementMonotonic` is its timestamp
 in the **Cerbo host's monotonic clock**, obtained by subtracting the producer's
@@ -264,11 +275,22 @@ configured voltages), and boolean `charging`, `discharging`, `online`. Optional
 and `cycles` is charge-cycle count. Zero measured current/SoC and false MOS
 permissions are valid; missing values never become zero or implicit permission.
 The producer must freeze these fields from one completed physical polling round.
-Partial, malformed, expired, or `ready: false` frames invalidate the whole string.
+Malformed frames, explicitly invalid observations and expired required fields
+invalidate the string. Partial rounds can preserve unexpired measurements only
+when they provide per-entry `seen_mask`, `valid_mask` and `observed_age_ms`.
+Bits 0–8 are voltage, current, SoC, temperature, four cell voltages and MOS status.
+An observed invalid bit fails closed; an absent bit preserves its previous value
+and timestamp. Unknown MOS status is `null`, not a false protection or true grant.
+`online: false` with this metadata means an incomplete current poll; it does not
+erase valid historical physical evidence. Incomplete frames without this metadata
+still fail closed. The masks describe four-cell BMS modules.
+
 Older/duplicate sequence numbers and retired boot sessions cannot renew freshness.
-MQTT disconnect discards all cached measurements and permissions. Retained
-messages are ignored. Once atomic messages are used, individual legacy topics
-cannot restore availability after an atomic fault.
+A brief MQTT disconnect, producer offline notification or new producer boot keeps
+only unexpired prior physical evidence. After these events, no timestamp is
+renewed until a complete new frame arrives; no permission is inferred from an
+online notification. Retained messages are ignored. Once atomic messages are
+used, individual legacy topics cannot restore availability after an atomic fault.
 
 For deliberate compatibility only, set `[mqtt] telemetry_mode = legacy`, pass
 `--telemetry-mode legacy`, or put `legacy` in

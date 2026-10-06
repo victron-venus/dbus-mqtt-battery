@@ -17,7 +17,7 @@ from time import monotonic, time
 from typing import Any
 
 from .bms_data import STALE_TIMEOUT, BatteryData
-from .telemetry import decode_batteries, decode_header
+from .telemetry import decode_batteries, decode_header, merge_partial
 
 logger = logging.getLogger("MqttBattery")
 
@@ -73,6 +73,9 @@ class MqttBatteryClient:
         self.telemetry_error = "Waiting for first complete live BMS readings"
         self._boot_id: str | None = None
         self._sequence = -1
+        self._has_full_snapshot = False
+        self._boot_ready = False
+        self.telemetry_partial = False
         self._retired_boot_ids: deque[str] = deque(maxlen=16)
 
         # Aggregate totals from ESP32
@@ -136,7 +139,12 @@ class MqttBatteryClient:
         """MQTT disconnection callback with auto-reconnect."""
         self.connected = False
         with self._data_lock:
-            self._invalidate_samples("MQTT disconnected; waiting for new live readings")
+            self._boot_ready = False
+            if self.telemetry_source == "atomic" and self._has_full_snapshot:
+                self.telemetry_partial = True
+                self.telemetry_error = "MQTT disconnected; using unexpired physical evidence"
+            else:
+                self._invalidate_samples("MQTT disconnected; waiting for new live readings")
         if rc != 0:
             logger.warning("MQTT disconnected unexpectedly (rc=%s), will auto-reconnect", rc)
         else:
@@ -152,6 +160,9 @@ class MqttBatteryClient:
             self._process_message(msg)
 
     def _invalidate_samples(self, reason: str) -> None:
+        self._has_full_snapshot = False
+        self._boot_ready = False
+        self.telemetry_partial = False
         self.batteries = {
             i: BatteryData(i, self.cells_per_bms) for i in range(1, self.battery_count + 1)
         }
@@ -169,6 +180,13 @@ class MqttBatteryClient:
                 self._process_telemetry(payload)
                 return
             if self.telemetry_source == "atomic":
+                if topic == f"{self.topic_prefix}/status" and payload.lower() == "offline":
+                    # Availability is transport evidence, never a BMS permission.
+                    # Preserve the original physical deadlines during a reboot.
+                    self._boot_ready = False
+                    if self._has_full_snapshot:
+                        self.telemetry_partial = True
+                        self.telemetry_error = "Producer offline; using unexpired physical evidence"
                 return
             if not topic.startswith(f"{self.topic_prefix}/"):
                 return
@@ -247,14 +265,27 @@ class MqttBatteryClient:
                 return
             if self._boot_id is not None and self._boot_id != boot_id:
                 self._retired_boot_ids.append(self._boot_id)
+                self._boot_ready = False
             self._boot_id, self._sequence = boot_id, sequence
-            batteries = decode_batteries(
-                frame, self.battery_count, self.bms_first, self.cells_per_bms, monotonic()
-            )
+            if frame["ready"]:
+                batteries = decode_batteries(
+                    frame, self.battery_count, self.bms_first, self.cells_per_bms, monotonic()
+                )
+                self._has_full_snapshot = True
+                self._boot_ready = True
+                self.telemetry_partial = False
+            elif self._has_full_snapshot:
+                batteries = merge_partial(
+                    frame, self.batteries, self.bms_first, monotonic(), refresh=self._boot_ready
+                )
+                self.telemetry_partial = True
+            else:
+                self._invalidate_samples("Waiting for first complete physical BMS frame")
+                return
             self.batteries = batteries
             self._total_updated.clear()
             self.telemetry_error = (
-                "" if frame["ready"] else "Producer is waiting for a complete poll round"
+                "" if frame["ready"] else "Incomplete poll; missing fields keep original expiry"
             )
         except (ValueError, TypeError, KeyError, OverflowError) as error:
             self._invalidate_samples(f"Rejected atomic telemetry: {error}")
@@ -468,6 +499,7 @@ class MqttBatteryClient:
             # and permissions. A new producer frame cannot tear this snapshot.
             totals = self._fresh_totals()
             telemetry_source = self.telemetry_source
+            telemetry_partial = self.telemetry_partial
             missing_data = self.missing_data_reason()
 
         # Process snapshots outside of locks
@@ -521,7 +553,8 @@ class MqttBatteryClient:
             "data_complete": data_complete,
             "oldest_sample_time": min(oldest_samples),
             "telemetry_source": telemetry_source,
-            "missing_data": missing_data if not data_complete else "",
+            "telemetry_partial": telemetry_partial,
+            "missing_data": missing_data if not data_complete or telemetry_partial else "",
             "voltage": voltage,
             "current": current,
             "power": power,

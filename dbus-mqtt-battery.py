@@ -146,6 +146,7 @@ class DbusAggregateService:
         self._soc_alarm_log_time = 0.0
         self._comm_alarm_active = False  # For log-on-transition of CommunicationError
         self._has_ready_data = False
+        self._previous_limits: tuple[float, float] | None = None
 
         service_name = f"com.victronenergy.battery.{service_suffix}"
         self._dbusservice = VeDbusService(service_name, get_bus(), register=False)
@@ -331,6 +332,7 @@ class DbusAggregateService:
         self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
         self._dbusservice.add_path("/Info/TelemetryState", "INITIALIZING")
         self._dbusservice.add_path("/Info/TelemetrySource", self.mqtt.telemetry_source)
+        self._dbusservice.add_path("/Info/TelemetryPartial", 0)
         self._dbusservice.add_path("/Info/MissingData", "")
         self._dbusservice.add_path("/Info/DataComplete", 0)
         self._dbusservice.add_path("/Info/DataAge", None)
@@ -382,12 +384,15 @@ class DbusAggregateService:
             "STALE" if self._has_ready_data else "INITIALIZING"
         )
         self._dbusservice["/Info/TelemetrySource"] = self.mqtt.telemetry_source
+        self._dbusservice["/Info/TelemetryPartial"] = int(self.mqtt.telemetry_partial)
         self._dbusservice["/Info/MissingData"] = (
             data["missing_data"] if data else self.mqtt.missing_data_reason()
         )
         self._dbusservice["/Info/DataComplete"] = 0
         self._dbusservice["/Info/DataAge"] = None
         self._dbusservice["/Info/LastMeasurementMonotonic"] = None
+        if self._has_ready_data:
+            self._previous_limits = (0.0, 0.0)
         self._update_module_status(data)
         for path in (
             "/Io/AllowToCharge",
@@ -437,7 +442,8 @@ class DbusAggregateService:
         self._has_ready_data = True
         self._dbusservice["/Connected"] = 1
         self._dbusservice["/Info/TelemetrySource"] = data["telemetry_source"]
-        self._dbusservice["/Info/MissingData"] = ""
+        self._dbusservice["/Info/TelemetryPartial"] = int(data["telemetry_partial"])
+        self._dbusservice["/Info/MissingData"] = data["missing_data"]
         self._dbusservice["/Info/DataComplete"] = 1
         self._dbusservice["/Info/DataAge"] = max(0.0, monotonic() - data["oldest_sample_time"])
         self._dbusservice["/Info/LastMeasurementMonotonic"] = data["oldest_sample_time"]
@@ -481,12 +487,29 @@ class DbusAggregateService:
         # DVCC: Dynamic Voltage and Current Control
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
+        # A partial round can tighten limits from newly observed protections,
+        # but cannot lift a previously published block or reduced current limit.
+        limit_paths = ("/Info/MaxChargeCurrent", "/Info/MaxDischargeCurrent")
+        if data["telemetry_partial"] and self._previous_limits is not None:
+            for path, previous in zip(limit_paths, self._previous_limits):
+                self._dbusservice[path] = min(self._dbusservice[path], previous)
+        self._previous_limits = tuple(self._dbusservice[path] for path in limit_paths)
+        # Future soft ramps must start at the limits actually published after
+        # the partial-frame hold, rather than at an internally relaxed value.
+        self.dvcc.last_ccl, self.dvcc.last_dcl = self._previous_limits
+        for path, limit in zip(
+            ("/Io/AllowToCharge", "/Io/AllowToDischarge"), self._previous_limits
+        ):
+            if limit == 0:
+                self._dbusservice[path] = 0
         self._dbusservice["/Info/TelemetryState"] = (
             "PROTECTION"
             if (
                 self._dbusservice["/Info/MaxChargeCurrent"] == 0
                 or self._dbusservice["/Info/MaxDischargeCurrent"] == 0
             )
+            else "DEGRADED"
+            if data["telemetry_partial"]
             else "READY"
         )
 

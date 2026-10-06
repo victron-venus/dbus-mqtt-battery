@@ -107,6 +107,22 @@ class BatteryData:
                 self.last_update = monotonic()
                 self._sample_times[key] = self.last_update
 
+    def copy(self) -> BatteryData:
+        """Clone detached values for an atomic partial-frame replacement."""
+        with self.lock:
+            result = BatteryData(self.battery_id, self.cell_count)
+            for name in self.__slots__:
+                if name != "lock":
+                    value = getattr(self, name)
+                    setattr(result, name, value.copy() if isinstance(value, dict) else value)
+            return result
+
+    def mark_sample_time(self, fields: list[str], sampled_at: float) -> None:
+        """Record physical evidence time, including atomic protocol status fields."""
+        for field in fields:
+            self._sample_times[field] = sampled_at
+        self.last_update = max(self._sample_times.values(), default=sampled_at)
+
     def _update_temperature_sensor(self, key: str, value: Any) -> None:
         """Store a single sensor reading and refresh the average temperature."""
         temp_idx = self._sensor_index(key)
