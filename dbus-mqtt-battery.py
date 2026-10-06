@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from time import sleep, time
+from time import monotonic, sleep, time
 from typing import Any
 
 # Add Victron library path
@@ -145,12 +145,16 @@ class DbusAggregateService:
         self._soc_alarm_log_state: int | None = None
         self._soc_alarm_log_time = 0.0
         self._comm_alarm_active = False  # For log-on-transition of CommunicationError
+        self._has_ready_data = False
+        self._previous_limits: tuple[float, float] | None = None
 
         service_name = f"com.victronenergy.battery.{service_suffix}"
         self._dbusservice = VeDbusService(service_name, get_bus(), register=False)
 
         self._setup_paths()
-        self._set_unavailable(None)
+        # Prepare the first truthful snapshot before announcing the service.
+        # A restart with ready data must not briefly advertise a zero DCL.
+        self.update()
         self._dbusservice.register()
         logger.info("D-Bus service registered: %s", service_name)
         logger.info(
@@ -289,55 +293,69 @@ class DbusAggregateService:
         self._dbusservice.add_path("/History/ChargeCycles", None, writeable=True)
         self._dbusservice.add_path(PATH_TIME_TO_GO, None, writeable=True)
 
-        # Charge/discharge control (DVCC) - default values for 4S LiFePO4
-        # CVL = 3.65V × 4 cells × 4 batteries = 58.4V (series config)
-        # CCL/DCL = typical limits for 280Ah LiFePO4
+        # Never announce a controlling BMS (non-null CVL) before the first
+        # complete physical snapshot. No synthetic bootstrap permissions.
         self._dbusservice.add_path(
             "/Info/MaxChargeCurrent",
-            100.0,
+            0.0,
             writeable=True,
             gettextcallback=_gettext_fmt("%.1fA"),
         )
         self._dbusservice.add_path(
             "/Info/MaxDischargeCurrent",
-            120.0,
+            0.0,
             writeable=True,
             gettextcallback=_gettext_fmt("%.1fA"),
         )
         self._dbusservice.add_path(
             "/Info/MaxChargeVoltage",
-            58.4,
+            None,
             writeable=True,
             gettextcallback=_gettext_fmt("%.2fV"),
         )
         self._dbusservice.add_path(
             "/Info/MaxChargeCellVoltage",
-            3.65,
+            None,
             writeable=True,
             gettextcallback=_gettext_fmt("%.3fV"),
         )
 
         # IO
-        self._dbusservice.add_path("/Io/AllowToCharge", 1, writeable=True)
-        self._dbusservice.add_path("/Io/AllowToDischarge", 1, writeable=True)
-        self._dbusservice.add_path("/Io/AllowToBalance", 1, writeable=True)
+        self._dbusservice.add_path("/Io/AllowToCharge", 0, writeable=True)
+        self._dbusservice.add_path("/Io/AllowToDischarge", 0, writeable=True)
+        self._dbusservice.add_path("/Io/AllowToBalance", 0, writeable=True)
 
         # Alarms
         setup_dbus_paths_alarms(self._dbusservice)
 
         # Reliability: stale data indicator (0=fresh, 1=stale)
         self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
+        self._dbusservice.add_path("/Info/TelemetryState", "INITIALIZING")
+        self._dbusservice.add_path("/Info/TelemetrySource", self.mqtt.telemetry_source)
+        self._dbusservice.add_path("/Info/TelemetryPartial", 0)
+        self._dbusservice.add_path("/Info/MissingData", "")
+        self._dbusservice.add_path("/Info/DataComplete", 0)
+        self._dbusservice.add_path("/Info/DataAge", None)
+        self._dbusservice.add_path("/Info/DataTimeout", float(STALE_TIMEOUT))
+        self._dbusservice.add_path("/Info/LastMeasurementMonotonic", None)
 
     def _set_communication_error(self, stale: bool) -> None:
         """Update /Alarms/CommunicationError and /System/StaleData from MQTT freshness."""
-        self._dbusservice["/Alarms/CommunicationError"] = 2 if stale else 0
+        self._dbusservice["/Alarms/CommunicationError"] = (
+            (2 if self._has_ready_data else 1) if stale else 0
+        )
         self._dbusservice["/System/StaleData"] = 1 if stale else 0
         if stale != self._comm_alarm_active:
             self._comm_alarm_active = stale
             if stale:
-                logger.error(
-                    "ALARM: BMS telemetry is missing, offline or older than %ss", STALE_TIMEOUT
-                )
+                if self._has_ready_data:
+                    logger.error(
+                        "ALARM: BMS telemetry is missing, offline or older than %ss", STALE_TIMEOUT
+                    )
+                else:
+                    logger.info(
+                        "Waiting for first complete live BMS snapshot; discharge remains blocked"
+                    )
             else:
                 logger.info("All configured BMS telemetry is fresh, CommunicationError cleared")
 
@@ -361,7 +379,20 @@ class DbusAggregateService:
         """Fail closed until the entire configured series chain is fresh."""
         self._dbusservice["/Connected"] = 0
         self._set_communication_error(True)
-        self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 2
+        self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 2 if self._has_ready_data else 0
+        self._dbusservice["/Info/TelemetryState"] = (
+            "STALE" if self._has_ready_data else "INITIALIZING"
+        )
+        self._dbusservice["/Info/TelemetrySource"] = self.mqtt.telemetry_source
+        self._dbusservice["/Info/TelemetryPartial"] = int(self.mqtt.telemetry_partial)
+        self._dbusservice["/Info/MissingData"] = (
+            data["missing_data"] if data else self.mqtt.missing_data_reason()
+        )
+        self._dbusservice["/Info/DataComplete"] = 0
+        self._dbusservice["/Info/DataAge"] = None
+        self._dbusservice["/Info/LastMeasurementMonotonic"] = None
+        if self._has_ready_data:
+            self._previous_limits = (0.0, 0.0)
         self._update_module_status(data)
         for path in (
             "/Io/AllowToCharge",
@@ -378,17 +409,44 @@ class DbusAggregateService:
             "/Soc",
             "/Capacity",
             PATH_TIME_TO_GO,
+            "/System/MinCellVoltage",
+            "/System/MaxCellVoltage",
+            "/Voltages/Sum",
+            "/Voltages/Diff",
         ):
             self._dbusservice[path] = None
+        for index in range(self.mqtt.battery_count * self.mqtt.cells_per_bms):
+            self._dbusservice[f"/Cell/{index}/Voltage"] = None
+            self._dbusservice[f"/Voltages/Cell{index + 1}"] = None
 
     def update(self):
-        """Update D-Bus values from MQTT data"""
-        data = self.mqtt.get_aggregate_data()
+        """Publish one consistent measurement/permission change notification."""
+        publisher = self._dbusservice
+        with publisher as transaction:
+            self._dbusservice = transaction
+            try:
+                self._publish_snapshot(self.mqtt.get_aggregate_data())
+            except Exception:
+                # Even a failed calculation must not leave prior permissions
+                # paired with partially updated measurements.
+                self._set_unavailable(None)
+                raise
+            finally:
+                self._dbusservice = publisher
+
+    def _publish_snapshot(self, data: dict[str, Any] | None) -> None:
         if not data or not data["data_complete"]:
             self._set_unavailable(data)
             return
 
+        self._has_ready_data = True
         self._dbusservice["/Connected"] = 1
+        self._dbusservice["/Info/TelemetrySource"] = data["telemetry_source"]
+        self._dbusservice["/Info/TelemetryPartial"] = int(data["telemetry_partial"])
+        self._dbusservice["/Info/MissingData"] = data["missing_data"]
+        self._dbusservice["/Info/DataComplete"] = 1
+        self._dbusservice["/Info/DataAge"] = max(0.0, monotonic() - data["oldest_sample_time"])
+        self._dbusservice["/Info/LastMeasurementMonotonic"] = data["oldest_sample_time"]
 
         self._set_communication_error(False)
 
@@ -429,6 +487,31 @@ class DbusAggregateService:
         # DVCC: Dynamic Voltage and Current Control
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
+        # A partial round can tighten limits from newly observed protections,
+        # but cannot lift a previously published block or reduced current limit.
+        limit_paths = ("/Info/MaxChargeCurrent", "/Info/MaxDischargeCurrent")
+        if data["telemetry_partial"] and self._previous_limits is not None:
+            for path, previous in zip(limit_paths, self._previous_limits):
+                self._dbusservice[path] = min(self._dbusservice[path], previous)
+        self._previous_limits = tuple(self._dbusservice[path] for path in limit_paths)
+        # Future soft ramps must start at the limits actually published after
+        # the partial-frame hold, rather than at an internally relaxed value.
+        self.dvcc.last_ccl, self.dvcc.last_dcl = self._previous_limits
+        for path, limit in zip(
+            ("/Io/AllowToCharge", "/Io/AllowToDischarge"), self._previous_limits
+        ):
+            if limit == 0:
+                self._dbusservice[path] = 0
+        self._dbusservice["/Info/TelemetryState"] = (
+            "PROTECTION"
+            if (
+                self._dbusservice["/Info/MaxChargeCurrent"] == 0
+                or self._dbusservice["/Info/MaxDischargeCurrent"] == 0
+            )
+            else "DEGRADED"
+            if data["telemetry_partial"]
+            else "READY"
+        )
 
     def _update_time_to_go(self, data: dict[str, Any]) -> None:
         """Compute and publish estimated time-to-go (in seconds)."""
@@ -821,6 +904,7 @@ def main():
         config.battery.bms_first,
         config.battery.cells_per_bms,
         config.battery.temps_per_bms,
+        config.mqtt.telemetry_mode,
     )
     if not mqtt_client.connect():
         logger.warning("Failed to connect to MQTT broker")

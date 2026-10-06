@@ -73,4 +73,5 @@ def test_setup_preserves_supervisor_state_and_records_completion(tmp_path):
         run = (service_root / name / "run").read_text()
         assert "exec 2>&1" in run
         assert '--cells-per-bms "4"' in run
+        assert '--telemetry-mode "atomic"' in run
         assert "s25000 n4" in (service_root / name / "log/run").read_text()
