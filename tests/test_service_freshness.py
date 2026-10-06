@@ -16,6 +16,7 @@ class FakeDbusService(dict):
     def __init__(self, *_args, **_kwargs):
         super().__init__()
         self.published_snapshots = []
+        self.registered_snapshot = None
 
     def __enter__(self):
         return self

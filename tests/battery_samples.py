@@ -1,10 +1,14 @@
 """Complete physical test readings, retaining previously received BMS vetoes."""
 
+# Exercise the same private callback Paho invokes on incoming messages.
+# pylint: disable=protected-access
+
 import json
 from types import SimpleNamespace
 
 
 def refresh_battery(battery, *, omit=(), **overrides):
+    """Populate one complete sample while preserving any previously received veto."""
     values = {
         "voltage": 13.2,
         "current": 10,
@@ -23,6 +27,7 @@ def refresh_battery(battery, *, omit=(), **overrides):
 
 
 def telemetry_frame(*, seq=1, boot_id="test-boot", ready=True, count=2, first=1):
+    """Return a complete schema 1 producer frame for the configured BMS range."""
     return {
         "schema": 1,
         "boot_id": boot_id,
@@ -47,6 +52,7 @@ def telemetry_frame(*, seq=1, boot_id="test-boot", ready=True, count=2, first=1)
 
 
 def deliver_frame(client, frame, *, retain=False):
+    """Feed serialized wire data through the actual consumer callback."""
     client._on_message(
         None,
         None,

@@ -1,5 +1,8 @@
 """Producer-session and physical-age contracts without a broker or hardware."""
 
+# Pytest fixtures and direct callback calls intentionally exercise the wire boundary.
+# pylint: disable=missing-function-docstring,redefined-outer-name,protected-access
+
 from copy import deepcopy
 from types import SimpleNamespace
 

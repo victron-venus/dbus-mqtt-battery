@@ -356,7 +356,7 @@ class TestTemperatureGlobalIds:
         ]
         _cells, temps, _values, ok = self._collect(client, both)
         assert ok is True
-        by_id = {gid: val for gid, val in temps}
+        by_id = dict(temps)
         assert by_id[1] == 20.0 and by_id[4] == 23.0
         assert by_id[5] == 24.0 and by_id[6] == 25.0
         assert self._ids(temps) == [1, 2, 3, 4, 5, 6]

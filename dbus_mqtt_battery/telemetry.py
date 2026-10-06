@@ -1,5 +1,8 @@
 """Validate atomic ESPHome telemetry before replacing any live battery data."""
 
+# Exact JSON types intentionally distinguish booleans from Python integer subclasses.
+# pylint: disable=unidiomatic-typecheck
+
 from __future__ import annotations
 
 import json
@@ -86,6 +89,8 @@ def decode_batteries(
                 if value >= 0 and (field != "cycles" or value.is_integer()):
                     battery.update(target, value)
         # Preserve the sensor's age; receipt time must not rejuvenate old readings.
+        # The decoder initializes the entire detached model before publication.
+        # pylint: disable-next=protected-access
         battery._sample_times = {key: now - age for key in battery._sample_times}
         battery.last_update = now - age
         if not battery.is_valid():

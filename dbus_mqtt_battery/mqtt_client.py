@@ -261,6 +261,7 @@ class MqttBatteryClient:
             logger.warning("%s", self.telemetry_error)
 
     def missing_data_reason(self) -> str:
+        """Describe absent or expired physical readings under the snapshot lock."""
         with self._data_lock:
             missing = [
                 f"BMS {index + self.bms_first - 1}: {', '.join(battery.missing_fields())}"
