@@ -5,6 +5,8 @@
 import os
 import tempfile
 
+import pytest
+
 from dbus_mqtt_battery.config import (
     CONFIG_FILE_LOCATIONS,
     DEFAULT_BATTERY_COUNT,
@@ -134,8 +136,22 @@ def test_temperature_stride_file_and_cli_precedence(tmp_path):
 
 
 def test_temperature_stride_rejects_zero():
-    import pytest
-
     args = create_argument_parser().parse_args(["--temps-per-bms", "0"])
     with pytest.raises(ValueError, match="temps_per_bms"):
         merge_config_and_args(Config(), args)
+
+
+def test_atomic_mode_is_default_and_legacy_requires_explicit_configuration(tmp_path):
+    assert Config().mqtt.telemetry_mode == "atomic"
+    config_path = tmp_path / "battery.ini"
+    config_path.write_text("[mqtt]\ntelemetry_mode = legacy\n")
+    config = Config.from_file(config_path)
+    assert config.mqtt.telemetry_mode == "legacy"
+    args = create_argument_parser().parse_args(["--telemetry-mode", "atomic"])
+    assert merge_config_and_args(config, args).mqtt.telemetry_mode == "atomic"
+
+
+def test_invalid_telemetry_mode_is_rejected():
+    config = Config(mqtt=MqttConfig(telemetry_mode="fallback-silently"))
+    with pytest.raises(ValueError, match="telemetry_mode"):
+        config.validate()

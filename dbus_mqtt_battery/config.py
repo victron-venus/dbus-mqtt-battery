@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 # Version
-VERSION = "2.7.7"
+VERSION = "2.7.8"
 
 # Default values
 DEFAULT_MQTT_BROKER = "localhost"
@@ -89,6 +89,7 @@ class MqttConfig:
     broker: str = DEFAULT_MQTT_BROKER
     port: int = DEFAULT_MQTT_PORT
     topic_prefix: str = DEFAULT_TOPIC_PREFIX
+    telemetry_mode: str = "atomic"
 
 
 @dataclass
@@ -134,6 +135,8 @@ class Config:
         """Raise ValueError for configuration that cannot export safe temperature IDs."""
         if self.battery.temps_per_bms < 1:
             raise ValueError("temps_per_bms must be >= 1")
+        if self.mqtt.telemetry_mode not in ("atomic", "legacy"):
+            raise ValueError("telemetry_mode must be atomic or legacy")
 
     @classmethod
     def from_file(cls, path: str | Path) -> Config:
@@ -149,6 +152,7 @@ class Config:
             mqtt.broker = config.get("mqtt", "broker", fallback=mqtt.broker)
             mqtt.port = config.getint("mqtt", "port", fallback=mqtt.port)
             mqtt.topic_prefix = config.get("mqtt", "topic_prefix", fallback=mqtt.topic_prefix)
+            mqtt.telemetry_mode = config.get("mqtt", "telemetry_mode", fallback=mqtt.telemetry_mode)
 
         if "battery" in config:
             battery.count = config.getint("battery", "count", fallback=battery.count)
@@ -234,6 +238,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
     )
     mqtt_group.add_argument(
         "--topic-prefix", default=argparse.SUPPRESS, help="MQTT topic prefix (default: battery)"
+    )
+    mqtt_group.add_argument(
+        "--telemetry-mode",
+        choices=("atomic", "legacy"),
+        default=argparse.SUPPRESS,
+        help="Require coherent producer telemetry (default: atomic); legacy opts into weaker freshness",
     )
 
     # Battery settings
@@ -368,6 +378,8 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
         config.mqtt.port = args.port
     if hasattr(args, "topic_prefix"):
         config.mqtt.topic_prefix = args.topic_prefix
+    if hasattr(args, "telemetry_mode"):
+        config.mqtt.telemetry_mode = args.telemetry_mode
 
     # Battery overrides
     if hasattr(args, "battery_count"):

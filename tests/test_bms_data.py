@@ -3,6 +3,7 @@
 # pylint: disable=missing-class-docstring,missing-function-docstring
 
 import pytest
+from battery_samples import refresh_battery
 
 from dbus_mqtt_battery.bms_data import BatteryData
 
@@ -91,7 +92,7 @@ class TestIsValid:
 
     def test_valid_when_fresh_and_positive(self):
         b = BatteryData(1)
-        b.update("voltage", "12.0")
+        refresh_battery(b)
         assert b.is_valid() is True
 
 
@@ -154,10 +155,9 @@ def test_each_observed_live_field_must_remain_fresh(monkeypatch, field, value):
     now = [100.0]
     monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
     battery = BatteryData(1)
-    battery.update("voltage", 13.2)
-    battery.update(field, value)
+    refresh_battery(battery)
     now[0] += 60
-    battery.update("voltage", 13.3)
+    refresh_battery(battery, omit=(field,))
     assert not battery.is_valid()
     for invalid in ("nan", "inf", "-inf", "invalid"):
         battery.update(field, invalid)
@@ -170,13 +170,73 @@ def test_binary_blocks_are_latched_while_live_measurements_refresh(monkeypatch):
     now = [100.0]
     monkeypatch.setattr("dbus_mqtt_battery.bms_data.monotonic", lambda: now[0])
     battery = BatteryData(1)
-    battery.update("voltage", 13.2)
+    refresh_battery(battery)
     battery.update("charging", "OFF")
     now[0] += 3600
-    battery.update("voltage", 13.3)
+    refresh_battery(battery)
     assert battery.is_valid()
     assert not battery.charging
     battery.update("online", "OFF")
     assert not battery.is_valid()
     battery.update("online", "ON")
     assert battery.is_valid()
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "voltage",
+        "current",
+        "soc",
+        "temperature_1",
+        "cell_1",
+        "cell_2",
+        "cell_3",
+        "cell_4",
+        "charging",
+        "discharging",
+        "online",
+    ],
+)
+def test_every_required_initial_field_must_be_received(field):
+    battery = BatteryData(1)
+    refresh_battery(battery, omit=(field,))
+    assert not battery.is_valid()
+    assert field in battery.missing_fields()
+
+
+def test_unknown_measurements_and_permissions_are_not_zero_or_true():
+    battery = BatteryData(1)
+    for field in (
+        "voltage",
+        "current",
+        "power",
+        "soc",
+        "temperature",
+        "charging",
+        "discharging",
+        "online",
+    ):
+        assert getattr(battery, field) is None
+
+
+def test_measured_zero_soc_and_current_are_valid():
+    battery = BatteryData(1)
+    refresh_battery(battery, current=0, power=0, soc=0)
+    assert battery.is_valid()
+
+
+def test_configured_cell_count_is_required():
+    battery = BatteryData(1, cells_per_bms=8)
+    refresh_battery(battery, omit=("cell_8",))
+    assert not battery.is_valid()
+    battery.update("cell_8", 3.3)
+    assert battery.is_valid()
+
+
+def test_invalid_permission_cannot_retain_a_previous_allow():
+    battery = BatteryData(1)
+    refresh_battery(battery)
+    battery.update("discharging", "unknown")
+    assert battery.discharging is None
+    assert not battery.is_valid()

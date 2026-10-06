@@ -17,32 +17,31 @@ sys.modules["paho.mqtt"] = _paho
 sys.modules["paho.mqtt.client"] = vars(_paho)["client"]
 sys.modules["paho.mqtt.enums"] = vars(_paho)["enums"]
 
+from battery_samples import refresh_battery
+
 from dbus_mqtt_battery.mqtt_client import MqttBatteryClient
 
 
 def make_client(**kwargs):
-    defaults = {"broker": "localhost", "port": 1883, "battery_count": 2, "topic_prefix": "battery"}
+    defaults = {
+        "broker": "localhost",
+        "port": 1883,
+        "battery_count": 2,
+        "topic_prefix": "battery",
+        "telemetry_mode": "legacy",
+    }
     defaults.update(kwargs)
     return MqttBatteryClient(**defaults)
 
 
-def test_missing_optional_temperature_has_no_invented_sensor_ids():
+def test_missing_required_temperature_keeps_measurements_unknown():
     client = make_client(battery_count=1)
     battery = client.batteries[1]
-    for name, value in (
-        ("voltage", 13.2),
-        ("current", 1.0),
-        ("power", 13.2),
-        ("soc", 80.0),
-        ("online", "ON"),
-    ):
-        battery.update(name, value)
-    assert battery.is_valid()
+    refresh_battery(battery, omit=("temperature_1",))
+    assert not battery.is_valid()
     assert not battery.temperatures
     data = client.get_aggregate_data()
-    assert data is not None
-    assert data["min_temp_id"] is None
-    assert data["max_temp_id"] is None
+    assert data is None
     battery.update("temperature", 27.0)
     data = client.get_aggregate_data()
     assert data["min_temp"] == data["max_temp"] == 27.0
@@ -78,6 +77,7 @@ class TestOnMessageParsing:
         msg = MagicMock()
         msg.topic = topic
         msg.payload = payload.encode()
+        msg.retain = False
         return msg
 
     def test_voltage_bms1_updates_slot_1(self):
@@ -99,8 +99,8 @@ class TestOnMessageParsing:
     def test_out_of_range_bms_index_ignored(self):
         client = make_client(battery_count=2)
         client._on_message(None, None, self._msg("battery/sensor/voltage_bms9/state", "12.5"))
-        assert client.batteries[1].voltage == 0.0
-        assert client.batteries[2].voltage == 0.0
+        assert client.batteries[1].voltage is None
+        assert client.batteries[2].voltage is None
 
     def test_soc_message(self):
         client = make_client()
@@ -127,7 +127,7 @@ class TestOnMessageParsing:
     def test_invalid_topic_ignored(self):
         client = make_client()
         client._on_message(None, None, self._msg("battery", ""))
-        assert client.batteries[1].voltage == 0.0
+        assert client.batteries[1].voltage is None
 
 
 class TestTotals:
@@ -137,6 +137,7 @@ class TestTotals:
         msg = MagicMock()
         msg.topic = topic
         msg.payload = payload.encode()
+        msg.retain = False
         return msg
 
     def test_voltage_total(self):
@@ -174,10 +175,7 @@ class TestGetAggregateData:
 
     def test_returns_dict_when_batteries_present(self):
         client = make_client(battery_count=1)
-        # is_valid() requires voltage > 0; trigger freshness check
-        client.batteries[1].update("voltage", "12.5")
-        client.batteries[1].update("current", "5.0")
-        client.batteries[1].update("soc", "80.0")
+        refresh_battery(client.batteries[1], voltage=12.5, current=5.0, soc=80.0)
         result = client.get_aggregate_data()
         assert result is not None
         assert result["voltage"] == 12.5
@@ -201,8 +199,7 @@ class TestAggregateFreshness:
         now[0] += 60
         client._update_total("voltage_total", "52")
         battery = client.batteries[1]
-        for field, value in {"voltage": 52, "current": -5, "power": -260, "soc": 70}.items():
-            battery.update(field, value)
+        refresh_battery(battery, voltage=52, current=-5, power=-260, soc=70)
         result = client.get_aggregate_data()
         assert result["current"] == -5
         assert result["power"] == -260
@@ -312,11 +309,7 @@ class TestTemperatureGlobalIds:
 
         def seed(battery_id: int, temps: dict[int, float]) -> None:
             b = client.batteries[battery_id]
-            b.update("voltage", 13.2)
-            b.update("current", 1.0)
-            b.update("power", 13.2)
-            b.update("soc", 80.0)
-            b.update("online", "ON")
+            refresh_battery(b, current=1.0, power=13.2, soc=80.0)
             for idx, temp in temps.items():
                 b.update(f"temperature_{idx}", temp)
 
@@ -363,7 +356,7 @@ class TestTemperatureGlobalIds:
         ]
         _cells, temps, _values, ok = self._collect(client, both)
         assert ok is True
-        by_id = {gid: val for gid, val in temps}
+        by_id = dict(temps)
         assert by_id[1] == 20.0 and by_id[4] == 23.0
         assert by_id[5] == 24.0 and by_id[6] == 25.0
         assert self._ids(temps) == [1, 2, 3, 4, 5, 6]
