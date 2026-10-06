@@ -194,8 +194,9 @@ For issues specific to:
 
 ## Venus OS runtime and installation notes
 
-A series string is available only while every configured BMS reports a fresh,
-finite voltage and remains online. Availability or SoC messages cannot keep an
+A series string is available only while every configured BMS reports fresh
+voltage, current, SoC, temperature, every configured cell voltage, and explicit
+charge/discharge permissions. Availability or SoC messages cannot keep an
 old voltage fresh. If any module disappears, the aggregate marks `/Connected=0`,
 invalidates DC measurements and SoC, and sets charge/discharge permissions and
 DVCC current limits to zero until the complete string recovers. Configure the
@@ -218,3 +219,72 @@ They do not exercise physical batteries or charger responses.
 ## Temperature sensor IDs (`temps_per_bms`)
 
 Global temperature IDs use `(battery_id - 1) * temps_per_bms + sensor_index` with a **configured** stride (default `2`). Set `temps_per_bms` in config or `--temps-per-bms` to at least the densest BMS temperature sensor index. An undersized stride does **not** renumber sensors; temperature IDs are withheld while min/max temperature **values** still use every sensor.
+
+## Black start and telemetry readiness
+
+The default `atomic` telemetry mode requires the matching ESPHome firmware's
+non-retained `<topic-prefix>/telemetry` JSON messages. Update the bridge and both
+ESP monitors as one coordinated change. Old individual topics alone will leave
+the default bridge initializing with discharge blocked; this is intentional.
+
+There are four `/Info/TelemetryState` values:
+
+- `INITIALIZING`: no complete trustworthy snapshot has arrived in this process.
+  Measurements are invalid (`None`), permissions and CCL/DCL are zero. CVL stays
+  invalid, so the service does not advertise itself as a ready controlling BMS.
+  CommunicationError is a warning; missing data is not a measured LowSoc alarm.
+- `READY`: every configured BMS is complete and fresh, and neither current limit
+  is zero. A complete snapshot already received before D-Bus registration is
+  published immediately, without the former temporary DCL=0 state.
+- `PROTECTION`: measurements are valid, but a real BMS veto or calculated
+  voltage/temperature limit blocks charge or discharge. These blocks are never
+  bypassed by startup timing or a communications grace period.
+- `STALE`: a previously ready process lost required telemetry. Measurements are
+  invalid, CCL/DCL and permissions are zero, and the last CVL remains advertised
+  so a previously selected controlling BMS still enforces the zero current limits.
+
+The complete measurement/permission update uses one D-Bus `ItemsChanged` batch.
+`/Info/DataComplete`, `/Info/MissingData`, and `/Info/TelemetrySource` explain
+readiness. `/Info/DataAge` measures the oldest required physical sample;
+`/Info/DataTimeout` is 60 seconds. `/Info/LastMeasurementMonotonic` is its timestamp
+in the **Cerbo host's monotonic clock**, obtained by subtracting the producer's
+sample age from local receipt time. Another service on the same Cerbo can expire
+it even if this publisher stops updating. Do not compare it with ESP uptime or
+with timestamps from another host.
+
+The atomic payload has `schema: 1`, a nonempty string `boot_id`, an increasing
+integer `seq`, boolean `ready`, and a `batteries` array. Each configured entry
+contains `id`, `age_ms`, `voltage`, `current`, `soc`, `temperature`, `cells` (all
+configured voltages), and boolean `charging`, `discharging`, `online`. Optional
+`temperatures` preserves individual sensor extrema; `capacity` is remaining Ah
+and `cycles` is charge-cycle count. Zero measured current/SoC and false MOS
+permissions are valid; missing values never become zero or implicit permission.
+The producer must freeze these fields from one completed physical polling round.
+Partial, malformed, expired, or `ready: false` frames invalidate the whole string.
+Older/duplicate sequence numbers and retired boot sessions cannot renew freshness.
+MQTT disconnect discards all cached measurements and permissions. Retained
+messages are ignored. Once atomic messages are used, individual legacy topics
+cannot restore availability after an atomic fault.
+
+For deliberate compatibility only, set `[mqtt] telemetry_mode = legacy`, pass
+`--telemetry-mode legacy`, or put `legacy` in
+`/data/setupOptions/dbus-mqtt-battery/telemetryMode` before running SetupHelper.
+The default for that setup option is `atomic`; setup preserves the existing
+option files and configured chain counts. Legacy mode still requires the full
+set of live measurements and explicitly received permissions. Because old
+binary sensor topics are change-driven, permissions remain latched while all
+measurements stay fresh, but are discarded on broker disconnect. Some old
+firmware cannot republish unchanged permissions and will remain unavailable.
+Legacy messages have no physical-frame identity: a non-retained replay of a
+cached sensor value cannot be distinguished from a new reading. It is not a
+substitute for atomic firmware during black start.
+
+These changes do not supply power to a Cerbo connected to the inverter's AC
+output. Independent protected power for the Cerbo, ESP monitors and necessary
+network equipment is required to break that power/recovery dependency. A Multi
+already configured to require a BMS may still stop while no BMS is ready; delaying
+CVL advertisement is not a guarantee that such a Multi can black-start. Likewise,
+process restart loses the in-memory `READY`/`STALE` and sequence history and starts
+initializing again. No saved measurement is replayed as a fresh safety permission.
+Sample age is measured at the producer's publication; arbitrary network buffering
+time is not observable without an additional clock or request/response protocol.

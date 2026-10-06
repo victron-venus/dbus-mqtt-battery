@@ -7,6 +7,7 @@ import types
 from pathlib import Path
 
 import pytest
+from battery_samples import deliver_frame, refresh_battery, telemetry_frame
 
 from dbus_mqtt_battery.mqtt_client import MqttBatteryClient
 
@@ -14,6 +15,13 @@ from dbus_mqtt_battery.mqtt_client import MqttBatteryClient
 class FakeDbusService(dict):
     def __init__(self, *_args, **_kwargs):
         super().__init__()
+        self.published_snapshots = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        self.published_snapshots.append(dict(self))
 
     def add_path(self, path, value, **_kwargs):
         super().__setitem__(path, value)
@@ -23,9 +31,7 @@ class FakeDbusService(dict):
         super().__setitem__(path, value)
 
     def register(self):
-        assert self["/Connected"] == 0
-        assert self["/Info/MaxChargeCurrent"] == 0
-        assert self["/Info/MaxDischargeCurrent"] == 0
+        self.registered_snapshot = dict(self)
 
 
 @pytest.fixture(name="battery_service")
@@ -46,28 +52,22 @@ def make_battery_service(monkeypatch):
     finally:
         sys.path[:] = original_path
     monkeypatch.setattr(module, "get_bus", lambda: None)
+    monkeypatch.setattr(module, "monotonic", lambda: now[0])
     client = MqttBatteryClient("unused.invalid", 1883, battery_count=2)
     service = module.DbusAggregateService(client)
     return now, client, service
 
 
 def refresh(battery):
-    for key, value in {
-        "voltage": 13.2,
-        "current": 10,
-        "power": 132,
-        "soc": 50,
-        "cell_1": 3.3,
-        "temperature_1": 25,
-    }.items():
-        battery.update(key, value)
+    refresh_battery(battery)
 
 
 def assert_unavailable(service, offline):
     published = service._dbusservice
     assert published["/Connected"] == 0
-    assert published["/Alarms/CommunicationError"] == 2
-    assert published["/Alarms/InternalFailure"] == 2
+    initializing = published["/Info/TelemetryState"] == "INITIALIZING"
+    assert published["/Alarms/CommunicationError"] == (1 if initializing else 2)
+    assert published["/Alarms/InternalFailure"] == (0 if initializing else 2)
     assert published["/System/NrOfModulesOffline"] == offline
     assert published["/System/NrOfModulesOnline"] == 2 - offline
     for path in (
@@ -180,3 +180,111 @@ def test_configured_temperature_stride_exports_distinct_sensor_ids(battery_servi
     assert paths["/System/MaxCellTemperature"] == 30.0
     assert paths["/System/MinTemperatureCellId"] == 4
     assert paths["/System/MaxTemperatureCellId"] == 5
+
+
+def test_partial_initial_data_does_not_invent_low_soc_or_activate_bms(battery_service):
+    now, client, service = battery_service
+    for elapsed in (0, 5, 30, 90, 180):
+        now[0] = 100 + elapsed
+        for battery in client.batteries.values():
+            battery.update("voltage", 13.2)
+        service.update()
+        paths = service._dbusservice
+        assert paths["/Info/TelemetryState"] == "INITIALIZING"
+        assert paths["/Info/MaxChargeVoltage"] is None
+        assert paths["/Info/MaxDischargeCurrent"] == 0
+        assert paths["/Soc"] is None
+        assert paths["/Alarms/LowSoc"] == 0
+        assert paths["/Info/DataComplete"] == 0
+    for battery in client.batteries.values():
+        refresh(battery)
+    service.update()
+    assert paths["/Info/TelemetryState"] == "READY"
+    assert paths["/Soc"] == 50
+
+
+def test_constructor_uses_ready_snapshot_before_registration(battery_service):
+    _, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    restarted = type(service)(client)
+    registered = restarted._dbusservice.registered_snapshot
+    assert registered["/Connected"] == 1
+    assert registered["/Info/TelemetryState"] == "READY"
+    assert registered["/Info/MaxChargeVoltage"] == 29.2
+    assert registered["/Info/MaxDischargeCurrent"] == 120
+    assert registered["/Soc"] == 50
+
+
+def test_atomic_status_blocks_immediately_and_survives_full_refresh(battery_service):
+    _, client, service = battery_service
+    frame = telemetry_frame()
+    frame["batteries"][1]["discharging"] = False
+    deliver_frame(client, frame)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Connected"] == 1
+    assert paths["/Info/TelemetryState"] == "PROTECTION"
+    assert paths["/Io/AllowToDischarge"] == 0
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+    assert paths["/Info/MaxChargeVoltage"] == 29.2
+
+
+def test_armed_service_keeps_cvl_and_zero_dcl_after_data_loss(battery_service):
+    now, client, service = battery_service
+    frame = telemetry_frame()
+    frame["batteries"][1]["age_ms"] = 10000
+    deliver_frame(client, frame)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Info/DataAge"] == 10
+    assert paths["/Info/LastMeasurementMonotonic"] == 90
+    now[0] = 151
+    service.update()
+    assert paths["/Info/TelemetryState"] == "STALE"
+    assert paths["/Info/MaxChargeVoltage"] == 29.2
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+    assert paths["/Info/DataComplete"] == 0
+    assert paths["/System/MinCellVoltage"] is None
+    assert paths["/Cell/0/Voltage"] is None
+    assert paths["/Info/LastMeasurementMonotonic"] is None
+    deliver_frame(client, telemetry_frame(seq=2))
+    service.update()
+    assert paths["/Info/TelemetryState"] == "READY"
+
+
+def test_real_undervoltage_and_zero_soc_still_raise_protection(battery_service):
+    _, client, service = battery_service
+    frame = telemetry_frame()
+    for row in frame["batteries"]:
+        row.update(voltage=10.4, soc=0, cells=[2.6] * 4)
+    deliver_frame(client, frame)
+    service.update()
+    paths = service._dbusservice
+    assert paths["/Info/TelemetryState"] == "PROTECTION"
+    assert paths["/Soc"] == 0
+    assert paths["/Alarms/LowSoc"] == 2
+    assert paths["/Alarms/LowCellVoltage"] == 2
+    assert paths["/Info/MaxDischargeCurrent"] == 0
+
+
+def test_failed_calculation_flushes_a_safe_complete_dbus_batch(battery_service, monkeypatch):
+    _, client, service = battery_service
+    deliver_frame(client, telemetry_frame())
+    service.update()
+    publisher = service._dbusservice
+    before = len(publisher.published_snapshots)
+
+    def fail(_data):
+        raise ValueError("simulated calculation failure")
+
+    monkeypatch.setattr(service.dvcc, "calculate", fail)
+    with pytest.raises(ValueError, match="simulated calculation failure"):
+        service.update()
+    assert service._dbusservice is publisher
+    assert len(publisher.published_snapshots) == before + 1
+    published = publisher.published_snapshots[-1]
+    assert published["/Connected"] == 0
+    assert published["/Info/MaxDischargeCurrent"] == 0
+    assert published["/Info/MaxChargeVoltage"] == 29.2
+    assert published["/Soc"] is None
+    assert published["/Info/TelemetryState"] == "STALE"

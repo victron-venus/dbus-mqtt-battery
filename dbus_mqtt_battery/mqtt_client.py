@@ -11,11 +11,13 @@ import logging
 import math
 import os
 import re
-from threading import Lock
+from collections import deque
+from threading import RLock
 from time import monotonic, time
 from typing import Any
 
 from .bms_data import STALE_TIMEOUT, BatteryData
+from .telemetry import decode_batteries, decode_header
 
 logger = logging.getLogger("MqttBattery")
 
@@ -46,6 +48,7 @@ class MqttBatteryClient:
         bms_first: int = 1,
         cells_per_bms: int = 4,
         temps_per_bms: int = 2,
+        telemetry_mode: str = "atomic",
     ) -> None:
         self.broker = broker
         self.port = port
@@ -61,9 +64,16 @@ class MqttBatteryClient:
 
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
         self.batteries: dict[int, BatteryData] = {
-            i: BatteryData(i) for i in range(1, battery_count + 1)
+            i: BatteryData(i, cells_per_bms) for i in range(1, battery_count + 1)
         }
-        self._data_lock = Lock()
+        self._data_lock = RLock()
+        if telemetry_mode not in ("atomic", "legacy"):
+            raise ValueError("telemetry_mode must be atomic or legacy")
+        self.telemetry_source = telemetry_mode
+        self.telemetry_error = "Waiting for first complete live BMS readings"
+        self._boot_id: str | None = None
+        self._sequence = -1
+        self._retired_boot_ids: deque[str] = deque(maxlen=16)
 
         # Aggregate totals from ESP32
         self.total_voltage: float = 0.0
@@ -125,6 +135,8 @@ class MqttBatteryClient:
     def _on_disconnect(self, client: Any, userdata: Any, rc: int) -> None:
         """MQTT disconnection callback with auto-reconnect."""
         self.connected = False
+        with self._data_lock:
+            self._invalidate_samples("MQTT disconnected; waiting for new live readings")
         if rc != 0:
             logger.warning("MQTT disconnected unexpectedly (rc=%s), will auto-reconnect", rc)
         else:
@@ -132,20 +144,44 @@ class MqttBatteryClient:
 
     def _on_message(self, client: Any, userdata: Any, msg: Any) -> None:
         """MQTT message callback."""
+        # Retained values predate this subscription; the legacy protocol has no
+        # trustworthy source timestamp. They cannot initialize or renew a BMS.
+        if getattr(msg, "retain", False):
+            return
+        with self._data_lock:
+            self._process_message(msg)
+
+    def _invalidate_samples(self, reason: str) -> None:
+        self.batteries = {
+            i: BatteryData(i, self.cells_per_bms) for i in range(1, self.battery_count + 1)
+        }
+        self._total_updated.clear()
+        self.telemetry_error = reason
+
+    def _process_message(self, msg: Any) -> None:
         self.last_message_time = time()
         try:
             topic = msg.topic
             payload = msg.payload.decode("utf-8").strip()
+            if topic == f"{self.topic_prefix}/telemetry":
+                # Atomic producers must never fall back to cached legacy topics.
+                self.telemetry_source = "atomic"
+                self._process_telemetry(payload)
+                return
+            if self.telemetry_source == "atomic":
+                return
+            if not topic.startswith(f"{self.topic_prefix}/"):
+                return
 
             # Parse topic: battery/sensor/voltage_bms1/state
             #           or battery/binary_sensor/charging_bms1/state
-            parts = topic.split("/")
+            parts = topic[len(self.topic_prefix) + 1 :].split("/")
             if len(parts) < 3:
                 return
 
             # "sensor" or "binary_sensor" - extracted but not currently used
-            _sensor_type = parts[1]
-            sensor_name = parts[2]  # "voltage_bms1", "voltage_total", etc."
+            _sensor_type = parts[0]
+            sensor_name = parts[1]  # "voltage_bms1", "voltage_total", etc.
 
             # Handle totals
             if sensor_name.endswith("_total"):
@@ -196,7 +232,42 @@ class MqttBatteryClient:
                 self.batteries[bms_idx].update(mapping[sensor_key], payload)
 
         except Exception as e:  # noqa: BLE001 - keep MQTT loop alive on any bad payload
+            if msg.topic == f"{self.topic_prefix}/telemetry":
+                self.telemetry_source = "atomic"
+                self._invalidate_samples(f"Unreadable atomic telemetry: {e}")
             logger.debug("Error processing MQTT message: %s", e)
+
+    def _process_telemetry(self, payload: str) -> None:
+        """Accept one ordered, complete producer frame under the aggregate lock."""
+        try:
+            frame, boot_id, sequence = decode_header(payload)
+            if boot_id in self._retired_boot_ids or (
+                boot_id == self._boot_id and sequence <= self._sequence
+            ):
+                return
+            if self._boot_id is not None and self._boot_id != boot_id:
+                self._retired_boot_ids.append(self._boot_id)
+            self._boot_id, self._sequence = boot_id, sequence
+            batteries = decode_batteries(
+                frame, self.battery_count, self.bms_first, self.cells_per_bms, monotonic()
+            )
+            self.batteries = batteries
+            self._total_updated.clear()
+            self.telemetry_error = (
+                "" if frame["ready"] else "Producer is waiting for a complete poll round"
+            )
+        except (ValueError, TypeError, KeyError, OverflowError) as error:
+            self._invalidate_samples(f"Rejected atomic telemetry: {error}")
+            logger.warning("%s", self.telemetry_error)
+
+    def missing_data_reason(self) -> str:
+        with self._data_lock:
+            missing = [
+                f"BMS {index + self.bms_first - 1}: {', '.join(battery.missing_fields())}"
+                for index, battery in self.batteries.items()
+                if not battery.is_valid()
+            ]
+            return "; ".join(missing) or self.telemetry_error
 
     def _collect_cells_and_temps(
         self, valid_batts: list[dict[str, Any]]
@@ -287,7 +358,10 @@ class MqttBatteryClient:
         return low[1], low[0], high[1], high[0]
 
     def _compute_electrical_totals(
-        self, valid_batts: list[dict[str, Any]], total_capacity_remaining: float
+        self,
+        valid_batts: list[dict[str, Any]],
+        total_capacity_remaining: float,
+        totals: dict[str, float] | None = None,
     ) -> tuple[float, float, float, float, float]:
         """Compute aggregate voltage/current/power/soc/capacity.
 
@@ -295,13 +369,8 @@ class MqttBatteryClient:
         Important: many ESPHome configs publish voltage_total but NOT current_total.
         In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
         """
-        with self._data_lock:
-            now = monotonic()
-            totals = {
-                name: getattr(self, name)
-                for name, updated in self._total_updated.items()
-                if 0 <= now - updated < STALE_TIMEOUT
-            }
+        if totals is None:
+            totals = self._fresh_totals()
 
         voltage = totals.get("total_voltage", 0.0)
         if voltage <= 0:
@@ -324,6 +393,15 @@ class MqttBatteryClient:
         if capacity < 0:
             capacity = total_capacity_remaining
         return voltage, current, power, soc, capacity
+
+    def _fresh_totals(self) -> dict[str, float]:
+        with self._data_lock:
+            now = monotonic()
+            return {
+                name: getattr(self, name)
+                for name, updated in self._total_updated.items()
+                if 0 <= now - updated < STALE_TIMEOUT
+            }
 
     def _update_total(self, sensor_name: str, value: str) -> None:
         """Refresh only the recognized aggregate field received in this message."""
@@ -356,16 +434,20 @@ class MqttBatteryClient:
         # Copy battery data under lock to avoid race conditions with MQTT thread
         with self._data_lock:
             batt_snapshots: list[dict[str, Any]] = []
+            oldest_samples: list[float] = []
             for b in self.batteries.values():
                 with b.lock:
                     if not b.is_valid():
                         continue
+                    assert b.voltage is not None and b.current is not None
+                    oldest_sample = b.oldest_sample_time
+                    assert oldest_sample is not None
                     batt_snapshots.append(
                         {
                             "battery_id": b.battery_id,
                             "voltage": b.voltage,
                             "current": b.current,
-                            "power": b.power,
+                            "power": b.power if b.power is not None else b.voltage * b.current,
                             "soc": b.soc,
                             "capacity_remaining": b.capacity_remaining,
                             "temperature": b.temperature,
@@ -378,8 +460,14 @@ class MqttBatteryClient:
                             "online": b.online,
                         }
                     )
+                    oldest_samples.append(oldest_sample)
             if not batt_snapshots:
                 return None
+            # Copy totals and physical timestamps under the same lock as cells
+            # and permissions. A new producer frame cannot tear this snapshot.
+            totals = self._fresh_totals()
+            telemetry_source = self.telemetry_source
+            missing_data = self.missing_data_reason()
 
         # Process snapshots outside of locks
         valid_batts = batt_snapshots
@@ -425,11 +513,14 @@ class MqttBatteryClient:
 
         # Use ESP32 totals if available, otherwise calculate from per-BMS data
         voltage, current, power, soc, capacity = self._compute_electrical_totals(
-            valid_batts, total_capacity_remaining
+            valid_batts, total_capacity_remaining, totals
         )
 
         return {
             "data_complete": data_complete,
+            "oldest_sample_time": min(oldest_samples),
+            "telemetry_source": telemetry_source,
+            "missing_data": missing_data if not data_complete else "",
             "voltage": voltage,
             "current": current,
             "power": power,
@@ -448,7 +539,9 @@ class MqttBatteryClient:
             "cell_count": sum(b["cell_count"] for b in valid_batts),
             "allow_charge": data_complete and all(b["charging"] for b in valid_batts),
             "allow_discharge": data_complete and all(b["discharging"] for b in valid_batts),
-            "cycles": max(b["cycles"] for b in valid_batts),
+            "cycles": max(
+                (b["cycles"] for b in valid_batts if b["cycles"] is not None), default=None
+            ),
             "modules_online": sum(1 for b in valid_batts if b["online"]),
             "modules_offline": missing_count,
             "modules_blocking_discharge": missing_count
