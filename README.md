@@ -156,19 +156,16 @@ This downloads the latest version from GitHub and runs `setup install`.
 
 ## Related Projects
 
-This project is part of the Victron Venus OS integration suite:
+- [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) — ESP32 firmware that publishes JBD BMS telemetry to MQTT for this bridge.
+- [dbus-virtual-battery](https://github.com/victron-venus/dbus-virtual-battery) — derived battery measurements consuming this driver’s freshness contract; install compatible driver changes first.
+- [inverter-control](https://github.com/victron-venus/inverter-control) — ESS control that consumes Venus battery measurements and permissions.
+- [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) — web dashboard for Cerbo telemetry.
+- [venus-os-observability](https://github.com/victron-venus/venus-os-observability) — optional D-Bus metrics and diagnostics.
 
-| Project | Description |
-|---------|-------------|
-| [inverter-control](https://github.com/victron-venus/inverter-control) | Advanced ESS external control system with grid-zero targeting |
-| [inverter-dashboard](https://github.com/victron-venus/inverter-dashboard) | Real-time web dashboard (Python/FastAPI) via MQTT |
-| [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) | High-performance Go rewrite of the web dashboard |
-| [inverter-desktop](https://github.com/victron-venus/inverter-desktop) | Native desktop application (Rust/Tauri) for system monitoring |
-| **dbus-mqtt-battery** (this) | MQTT to D-Bus bridge for JBD BMS battery integration |
-| [dbus-tasmota-pv](https://github.com/victron-venus/dbus-tasmota-pv) | Tasmota smart plug integration as a PV inverter on D-Bus |
-| [esphome-jbd-bms-mqtt](https://github.com/victron-venus/esphome-jbd-bms-mqtt) | ESP32 Bluetooth monitor for JBD BMS batteries |
-| [inverter-monitoring](https://github.com/victron-venus/inverter-monitoring) | TIG (Telegraf, InfluxDB, Grafana) monitoring stack |
-| [terraform-github-victron](https://github.com/victron-venus/terraform-github-victron) | Infrastructure as Code for the GitHub organization |
+Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
+for other Venus OS packages and companion tools. Each project documents its own
+installation, compatibility and release requirements.
+
 
 ## License
 
