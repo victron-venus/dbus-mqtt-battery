@@ -225,7 +225,11 @@ Global temperature IDs use `(battery_id - 1) * temps_per_bms + sensor_index` wit
 The default `atomic` telemetry mode requires the matching ESPHome firmware's
 non-retained `<topic-prefix>/telemetry` JSON messages. Update the bridge and both
 ESP monitors as one coordinated change. Old individual topics alone will leave
-the default bridge initializing with discharge blocked; this is intentional.
+the default bridge initializing with charge/discharge blocked; this is intentional.
+Prepare and validate both firmware images before changing a running bridge.
+Solar chargers configured to require a BMS can also stop charging while no ready
+BMS is advertised. Initial charging after removal of the old BMS is not evidence
+that charging will continue throughout a long firmware upgrade.
 
 There are four `/Info/TelemetryState` values:
 
