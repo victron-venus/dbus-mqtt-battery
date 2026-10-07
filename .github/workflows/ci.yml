@@ -9,7 +9,7 @@ permissions:
 jobs:
   ci:
     name: CI
-    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@5f5ff3846aacee0edfbeadeb316ee68525e9208d # main
+    uses: victron-venus/venus-os-ci-toolkit/.github/workflows/python-ci.yml@062d60e8892d4a97e11f5985d0914d5b19fcd24e # main
     with:
       python-version: '3.12.13'
       # Coverage gate disabled — package has no coverage instrumentation; add
