@@ -369,9 +369,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
-    """Merge config file values with CLI arguments (CLI wins)."""
-    # MQTT overrides
+def _merge_mqtt_args(config: Config, args: argparse.Namespace) -> None:
+    """Apply explicitly supplied mqtt overrides in command-line order."""
     if hasattr(args, "broker"):
         config.mqtt.broker = args.broker
     if hasattr(args, "port"):
@@ -381,7 +380,9 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
     if hasattr(args, "telemetry_mode"):
         config.mqtt.telemetry_mode = args.telemetry_mode
 
-    # Battery overrides
+
+def _merge_battery_args(config: Config, args: argparse.Namespace) -> None:
+    """Apply explicitly supplied battery overrides in command-line order."""
     if hasattr(args, "battery_count"):
         config.battery.count = args.battery_count
     if hasattr(args, "capacity"):
@@ -392,6 +393,10 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
         config.battery.temps_per_bms = args.temps_per_bms
     if hasattr(args, "bms_first"):
         config.battery.bms_first = args.bms_first
+
+
+def _merge_alarms_args(config: Config, args: argparse.Namespace) -> None:
+    """Apply explicitly supplied alarms overrides in command-line order."""
     if hasattr(args, "alarm_low_soc"):
         config.battery.alarm_low_soc = args.alarm_low_soc
     if hasattr(args, "alarm_low_soc_critical"):
@@ -415,7 +420,9 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
     if hasattr(args, "alarm_low_temp_critical"):
         config.battery.alarm_low_temp_critical = args.alarm_low_temp_critical
 
-    # D-Bus overrides
+
+def _merge_dbus_args(config: Config, args: argparse.Namespace) -> None:
+    """Apply explicitly supplied dbus overrides in command-line order."""
     if hasattr(args, "instance"):
         config.dbus.instance = args.instance
     if hasattr(args, "service_suffix"):
@@ -423,6 +430,13 @@ def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
     if hasattr(args, "product_name"):
         config.dbus.product_name = args.product_name
 
+
+def merge_config_and_args(config: Config, args: argparse.Namespace) -> Config:
+    """Merge config file values with CLI arguments (CLI wins)."""
+    _merge_mqtt_args(config, args)
+    _merge_battery_args(config, args)
+    _merge_alarms_args(config, args)
+    _merge_dbus_args(config, args)
     config.validate()
     return config
 
