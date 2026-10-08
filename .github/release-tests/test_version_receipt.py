@@ -272,6 +272,7 @@ class CurrentBuildInputsTests(unittest.TestCase):
             with self.subTest(message=message, changes=changes):
                 value = {**original, **changes}
                 self.output.write_bytes(version_receipt.canonical(value))
+                before = sorted((path.name, path.read_bytes()) for path in self.assets.iterdir())
                 payloads = [
                     {"name": path.name, "size": path.stat().st_size,
                      "sha256": version_receipt.sha256(path.read_bytes())}
@@ -281,6 +282,8 @@ class CurrentBuildInputsTests(unittest.TestCase):
                     version_receipt.verify_receipts(
                         self.assets, self.plan, payloads, self.policy
                     )
+                after = sorted((path.name, path.read_bytes()) for path in self.assets.iterdir())
+                self.assertEqual(before, after)
 
 
 if __name__ == "__main__":
