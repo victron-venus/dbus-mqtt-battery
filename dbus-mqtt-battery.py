@@ -84,6 +84,25 @@ from dvcc import (
     DvccController,
 )
 
+# Shared protocol identifiers keep publication and update paths consistent.
+DBUS_CAPACITY_PATH = "/Capacity"
+DBUS_MIN_CELL_VOLTAGE_PATH = "/System/MinCellVoltage"
+DBUS_MAX_CELL_VOLTAGE_PATH = "/System/MaxCellVoltage"
+DBUS_VOLTAGE_SUM_PATH = "/Voltages/Sum"
+DBUS_VOLTAGE_DIFF_PATH = "/Voltages/Diff"
+DBUS_ALLOW_CHARGE_PATH = "/Io/AllowToCharge"
+DBUS_ALLOW_DISCHARGE_PATH = "/Io/AllowToDischarge"
+DBUS_TELEMETRY_STATE_PATH = "/Info/TelemetryState"
+DBUS_TELEMETRY_SOURCE_PATH = "/Info/TelemetrySource"
+DBUS_TELEMETRY_PARTIAL_PATH = "/Info/TelemetryPartial"
+DBUS_MISSING_DATA_PATH = "/Info/MissingData"
+DBUS_DATA_COMPLETE_PATH = "/Info/DataComplete"
+DBUS_DATA_AGE_PATH = "/Info/DataAge"
+DBUS_LAST_MEASUREMENT_PATH = "/Info/LastMeasurementMonotonic"
+DBUS_MAX_CHARGE_CURRENT_PATH = "/Info/MaxChargeCurrent"
+DBUS_MAX_DISCHARGE_CURRENT_PATH = "/Info/MaxDischargeCurrent"
+CELL_VOLTAGE_FORMAT = "%.3fV"
+
 # Logging setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("MqttBattery")
@@ -185,7 +204,7 @@ class DbusAggregateService:
         # State of charge
         self._dbusservice.add_path("/Soc", None, writeable=True)
         self._dbusservice.add_path(
-            "/Capacity",
+            DBUS_CAPACITY_PATH,
             None,
             writeable=True,
             gettextcallback=_gettext_fmt("%.1fAh"),
@@ -215,30 +234,30 @@ class DbusAggregateService:
 
         # Cell voltages (GUI v2)
         self._dbusservice.add_path(
-            "/System/MinCellVoltage",
+            DBUS_MIN_CELL_VOLTAGE_PATH,
             None,
             writeable=True,
-            gettextcallback=_gettext_fmt("%.3fV"),
+            gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
         )
         self._dbusservice.add_path("/System/MinVoltageCellId", None, writeable=True)
         self._dbusservice.add_path(
-            "/System/MaxCellVoltage",
+            DBUS_MAX_CELL_VOLTAGE_PATH,
             None,
             writeable=True,
-            gettextcallback=_gettext_fmt("%.3fV"),
+            gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
         )
         self._dbusservice.add_path("/System/MaxVoltageCellId", None, writeable=True)
         self._dbusservice.add_path(
-            "/Voltages/Sum",
+            DBUS_VOLTAGE_SUM_PATH,
             None,
             writeable=True,
             gettextcallback=_gettext_fmt("%.2fV"),
         )
         self._dbusservice.add_path(
-            "/Voltages/Diff",
+            DBUS_VOLTAGE_DIFF_PATH,
             None,
             writeable=True,
-            gettextcallback=_gettext_fmt("%.3fV"),
+            gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
         )
 
         # Individual cell voltages for GUI v2
@@ -254,7 +273,7 @@ class DbusAggregateService:
                 f"/Cell/{i}/Voltage",
                 None,
                 writeable=True,
-                gettextcallback=_gettext_fmt("%.3fV"),
+                gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
             )
             # Balancing status per cell (for color coding in GUI)
             self._dbusservice.add_path(f"/Cell/{i}/Balance", None, writeable=True)
@@ -265,7 +284,7 @@ class DbusAggregateService:
                 f"/Voltages/Cell{i}",
                 None,
                 writeable=True,
-                gettextcallback=_gettext_fmt("%.3fV"),
+                gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
             )
             self._dbusservice.add_path(f"/Balances/Cell{i}", None, writeable=True)
 
@@ -296,13 +315,13 @@ class DbusAggregateService:
         # Never announce a controlling BMS (non-null CVL) before the first
         # complete physical snapshot. No synthetic bootstrap permissions.
         self._dbusservice.add_path(
-            "/Info/MaxChargeCurrent",
+            DBUS_MAX_CHARGE_CURRENT_PATH,
             0.0,
             writeable=True,
             gettextcallback=_gettext_fmt("%.1fA"),
         )
         self._dbusservice.add_path(
-            "/Info/MaxDischargeCurrent",
+            DBUS_MAX_DISCHARGE_CURRENT_PATH,
             0.0,
             writeable=True,
             gettextcallback=_gettext_fmt("%.1fA"),
@@ -317,12 +336,12 @@ class DbusAggregateService:
             "/Info/MaxChargeCellVoltage",
             None,
             writeable=True,
-            gettextcallback=_gettext_fmt("%.3fV"),
+            gettextcallback=_gettext_fmt(CELL_VOLTAGE_FORMAT),
         )
 
         # IO
-        self._dbusservice.add_path("/Io/AllowToCharge", 0, writeable=True)
-        self._dbusservice.add_path("/Io/AllowToDischarge", 0, writeable=True)
+        self._dbusservice.add_path(DBUS_ALLOW_CHARGE_PATH, 0, writeable=True)
+        self._dbusservice.add_path(DBUS_ALLOW_DISCHARGE_PATH, 0, writeable=True)
         self._dbusservice.add_path("/Io/AllowToBalance", 0, writeable=True)
 
         # Alarms
@@ -330,14 +349,14 @@ class DbusAggregateService:
 
         # Reliability: stale data indicator (0=fresh, 1=stale)
         self._dbusservice.add_path("/System/StaleData", 0, writeable=True)
-        self._dbusservice.add_path("/Info/TelemetryState", "INITIALIZING")
-        self._dbusservice.add_path("/Info/TelemetrySource", self.mqtt.telemetry_source)
-        self._dbusservice.add_path("/Info/TelemetryPartial", 0)
-        self._dbusservice.add_path("/Info/MissingData", "")
-        self._dbusservice.add_path("/Info/DataComplete", 0)
-        self._dbusservice.add_path("/Info/DataAge", None)
+        self._dbusservice.add_path(DBUS_TELEMETRY_STATE_PATH, "INITIALIZING")
+        self._dbusservice.add_path(DBUS_TELEMETRY_SOURCE_PATH, self.mqtt.telemetry_source)
+        self._dbusservice.add_path(DBUS_TELEMETRY_PARTIAL_PATH, 0)
+        self._dbusservice.add_path(DBUS_MISSING_DATA_PATH, "")
+        self._dbusservice.add_path(DBUS_DATA_COMPLETE_PATH, 0)
+        self._dbusservice.add_path(DBUS_DATA_AGE_PATH, None)
         self._dbusservice.add_path("/Info/DataTimeout", float(STALE_TIMEOUT))
-        self._dbusservice.add_path("/Info/LastMeasurementMonotonic", None)
+        self._dbusservice.add_path(DBUS_LAST_MEASUREMENT_PATH, None)
 
     def _set_communication_error(self, stale: bool) -> None:
         """Update /Alarms/CommunicationError and /System/StaleData from MQTT freshness."""
@@ -380,25 +399,25 @@ class DbusAggregateService:
         self._dbusservice["/Connected"] = 0
         self._set_communication_error(True)
         self._dbusservice[ALARM_PATH_INTERNAL_FAILURE] = 2 if self._has_ready_data else 0
-        self._dbusservice["/Info/TelemetryState"] = (
+        self._dbusservice[DBUS_TELEMETRY_STATE_PATH] = (
             "STALE" if self._has_ready_data else "INITIALIZING"
         )
-        self._dbusservice["/Info/TelemetrySource"] = self.mqtt.telemetry_source
-        self._dbusservice["/Info/TelemetryPartial"] = int(self.mqtt.telemetry_partial)
-        self._dbusservice["/Info/MissingData"] = (
+        self._dbusservice[DBUS_TELEMETRY_SOURCE_PATH] = self.mqtt.telemetry_source
+        self._dbusservice[DBUS_TELEMETRY_PARTIAL_PATH] = int(self.mqtt.telemetry_partial)
+        self._dbusservice[DBUS_MISSING_DATA_PATH] = (
             data["missing_data"] if data else self.mqtt.missing_data_reason()
         )
-        self._dbusservice["/Info/DataComplete"] = 0
-        self._dbusservice["/Info/DataAge"] = None
-        self._dbusservice["/Info/LastMeasurementMonotonic"] = None
+        self._dbusservice[DBUS_DATA_COMPLETE_PATH] = 0
+        self._dbusservice[DBUS_DATA_AGE_PATH] = None
+        self._dbusservice[DBUS_LAST_MEASUREMENT_PATH] = None
         if self._has_ready_data:
             self._previous_limits = (0.0, 0.0)
         self._update_module_status(data)
         for path in (
-            "/Io/AllowToCharge",
-            "/Io/AllowToDischarge",
-            "/Info/MaxChargeCurrent",
-            "/Info/MaxDischargeCurrent",
+            DBUS_ALLOW_CHARGE_PATH,
+            DBUS_ALLOW_DISCHARGE_PATH,
+            DBUS_MAX_CHARGE_CURRENT_PATH,
+            DBUS_MAX_DISCHARGE_CURRENT_PATH,
         ):
             self._dbusservice[path] = 0
         for path in (
@@ -407,12 +426,12 @@ class DbusAggregateService:
             PATH_DC_POWER,
             "/Dc/0/Temperature",
             "/Soc",
-            "/Capacity",
+            DBUS_CAPACITY_PATH,
             PATH_TIME_TO_GO,
-            "/System/MinCellVoltage",
-            "/System/MaxCellVoltage",
-            "/Voltages/Sum",
-            "/Voltages/Diff",
+            DBUS_MIN_CELL_VOLTAGE_PATH,
+            DBUS_MAX_CELL_VOLTAGE_PATH,
+            DBUS_VOLTAGE_SUM_PATH,
+            DBUS_VOLTAGE_DIFF_PATH,
         ):
             self._dbusservice[path] = None
         for index in range(self.mqtt.battery_count * self.mqtt.cells_per_bms):
@@ -441,12 +460,12 @@ class DbusAggregateService:
 
         self._has_ready_data = True
         self._dbusservice["/Connected"] = 1
-        self._dbusservice["/Info/TelemetrySource"] = data["telemetry_source"]
-        self._dbusservice["/Info/TelemetryPartial"] = int(data["telemetry_partial"])
-        self._dbusservice["/Info/MissingData"] = data["missing_data"]
-        self._dbusservice["/Info/DataComplete"] = 1
-        self._dbusservice["/Info/DataAge"] = max(0.0, monotonic() - data["oldest_sample_time"])
-        self._dbusservice["/Info/LastMeasurementMonotonic"] = data["oldest_sample_time"]
+        self._dbusservice[DBUS_TELEMETRY_SOURCE_PATH] = data["telemetry_source"]
+        self._dbusservice[DBUS_TELEMETRY_PARTIAL_PATH] = int(data["telemetry_partial"])
+        self._dbusservice[DBUS_MISSING_DATA_PATH] = data["missing_data"]
+        self._dbusservice[DBUS_DATA_COMPLETE_PATH] = 1
+        self._dbusservice[DBUS_DATA_AGE_PATH] = max(0.0, monotonic() - data["oldest_sample_time"])
+        self._dbusservice[DBUS_LAST_MEASUREMENT_PATH] = data["oldest_sample_time"]
 
         self._set_communication_error(False)
 
@@ -458,7 +477,7 @@ class DbusAggregateService:
 
         # State of charge
         self._dbusservice["/Soc"] = round(data["soc"], 1)
-        self._dbusservice["/Capacity"] = round(data["capacity"], 1)
+        self._dbusservice[DBUS_CAPACITY_PATH] = round(data["capacity"], 1)
         if data.get("capacity_full") and data["capacity_full"] > 0:
             self._dbusservice["/InstalledCapacity"] = round(data["capacity_full"], 0)
 
@@ -478,8 +497,8 @@ class DbusAggregateService:
         self._dbusservice["/History/ChargeCycles"] = data["cycles"]
 
         # Charge/discharge control
-        self._dbusservice["/Io/AllowToCharge"] = 1 if data["allow_charge"] else 0
-        self._dbusservice["/Io/AllowToDischarge"] = 1 if data["allow_discharge"] else 0
+        self._dbusservice[DBUS_ALLOW_CHARGE_PATH] = 1 if data["allow_charge"] else 0
+        self._dbusservice[DBUS_ALLOW_DISCHARGE_PATH] = 1 if data["allow_discharge"] else 0
 
         # Update alarms based on data
         self._update_alarms(data)
@@ -489,7 +508,7 @@ class DbusAggregateService:
         self._update_dvcc(data)
         # A partial round can tighten limits from newly observed protections,
         # but cannot lift a previously published block or reduced current limit.
-        limit_paths = ("/Info/MaxChargeCurrent", "/Info/MaxDischargeCurrent")
+        limit_paths = (DBUS_MAX_CHARGE_CURRENT_PATH, DBUS_MAX_DISCHARGE_CURRENT_PATH)
         if data["telemetry_partial"] and self._previous_limits is not None:
             for path, previous in zip(limit_paths, self._previous_limits):
                 self._dbusservice[path] = min(self._dbusservice[path], previous)
@@ -498,15 +517,15 @@ class DbusAggregateService:
         # the partial-frame hold, rather than at an internally relaxed value.
         self.dvcc.last_ccl, self.dvcc.last_dcl = self._previous_limits
         for path, limit in zip(
-            ("/Io/AllowToCharge", "/Io/AllowToDischarge"), self._previous_limits
+            (DBUS_ALLOW_CHARGE_PATH, DBUS_ALLOW_DISCHARGE_PATH), self._previous_limits
         ):
             if limit == 0:
                 self._dbusservice[path] = 0
-        self._dbusservice["/Info/TelemetryState"] = (
+        self._dbusservice[DBUS_TELEMETRY_STATE_PATH] = (
             "PROTECTION"
             if (
-                self._dbusservice["/Info/MaxChargeCurrent"] == 0
-                or self._dbusservice["/Info/MaxDischargeCurrent"] == 0
+                self._dbusservice[DBUS_MAX_CHARGE_CURRENT_PATH] == 0
+                or self._dbusservice[DBUS_MAX_DISCHARGE_CURRENT_PATH] == 0
             )
             else "DEGRADED"
             if data["telemetry_partial"]
@@ -540,14 +559,16 @@ class DbusAggregateService:
     def _update_cell_voltages(self, data: dict[str, Any]) -> None:
         """Publish min/max cell info and per-cell voltages for GUI v2."""
         if data["min_cell"] is not None:
-            self._dbusservice["/System/MinCellVoltage"] = round(data["min_cell"], 3)
+            self._dbusservice[DBUS_MIN_CELL_VOLTAGE_PATH] = round(data["min_cell"], 3)
             self._dbusservice["/System/MinVoltageCellId"] = data.get("min_cell_id", 1)
         if data["max_cell"] is not None:
-            self._dbusservice["/System/MaxCellVoltage"] = round(data["max_cell"], 3)
+            self._dbusservice[DBUS_MAX_CELL_VOLTAGE_PATH] = round(data["max_cell"], 3)
             self._dbusservice["/System/MaxVoltageCellId"] = data.get("max_cell_id", 1)
         if data["min_cell"] and data["max_cell"]:
-            self._dbusservice["/Voltages/Sum"] = round(data["voltage"], 2)
-            self._dbusservice["/Voltages/Diff"] = round(data["max_cell"] - data["min_cell"], 3)
+            self._dbusservice[DBUS_VOLTAGE_SUM_PATH] = round(data["voltage"], 2)
+            self._dbusservice[DBUS_VOLTAGE_DIFF_PATH] = round(
+                data["max_cell"] - data["min_cell"], 3
+            )
 
         # Update individual cell voltages for GUI v2
         all_cells = data.get("all_cells", [])
@@ -781,8 +802,8 @@ class DbusAggregateService:
         cell_delta = dvcc.get("cell_delta")
 
         # Update D-Bus values for Victron DVCC
-        self._dbusservice["/Info/MaxChargeCurrent"] = ccl
-        self._dbusservice["/Info/MaxDischargeCurrent"] = dcl
+        self._dbusservice[DBUS_MAX_CHARGE_CURRENT_PATH] = ccl
+        self._dbusservice[DBUS_MAX_DISCHARGE_CURRENT_PATH] = dcl
         self._dbusservice["/Info/MaxChargeVoltage"] = cvl
 
         # Update max cell voltage for reference
