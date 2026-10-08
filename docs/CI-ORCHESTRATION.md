@@ -29,3 +29,5 @@ The repository-specific imports, type annotations, policy and workflow inputs
 remain authoritative; this is not a full generator upgrade.
 
 Shared CI is pinned to [toolkit b8154df](https://github.com/victron-venus/venus-os-ci-toolkit/commit/b8154dfcf2d4cf829cb41514ef3cbf82c68a418f). The shared Python CI workflow installs the committed `uv.lock` with `dev,test` extras. The `build` group bootstraps wheel-only build backends before the local project is installed without build isolation. Existing test, type-check, and coverage settings are retained.
+
+Additional helper maintenance was ported from reviewed [toolkit source 0613931](https://github.com/victron-venus/venus-os-ci-toolkit/tree/0613931b412bf69abc6ebfe0fd11d03175eb57dc/scripts), proposed in [toolkit PR 125](https://github.com/victron-venus/venus-os-ci-toolkit/pull/125), which was pending upstream merge when this port was prepared. Extract frozen-plan validation into a lazy helper, retaining the CLI/package import modes and validation order.
