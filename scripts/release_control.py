@@ -1696,6 +1696,26 @@ def require_reviewers(gh: GitHub) -> None:
     )
 
 
+def _verify_versioned_promotion(gh: GitHub, plan: dict) -> None:
+    """Load the optional ledger only when checking a versioned promotion."""
+    if TYPE_CHECKING or __package__:
+        from .release_state import verify_promotion_order
+    else:
+        from release_state import verify_promotion_order
+
+    verify_promotion_order(gh, plan)
+
+
+def _begin_versioned_promotion(gh: GitHub, plan: dict, run_id: int) -> None:
+    """Record the publication floor after the promotion preflight succeeds."""
+    if TYPE_CHECKING or __package__:
+        from .release_state import begin_publication
+    else:
+        from release_state import begin_publication
+
+    begin_publication(gh, plan, run_id, promotion=True)
+
+
 # Preserve the ordered security checks and staged bytes within one transaction.
 # pylint: disable-next=too-many-locals,too-many-statements
 def promote(args) -> dict:
@@ -1738,13 +1758,7 @@ def promote(args) -> dict:
         "This RC requires a separately validated final build; byte promotion is disabled",
     )
     if manifest.get("version_plan"):
-        # pylint: disable-next=import-outside-toplevel
-        if TYPE_CHECKING or __package__:
-            from .release_state import verify_promotion_order
-        else:
-            from release_state import verify_promotion_order
-
-        verify_promotion_order(gh, manifest["version_plan"])
+        _verify_versioned_promotion(gh, manifest["version_plan"])
     require(
         policy_snapshot == manifest["source_policy"],
         "Manifest policy snapshot differs from the policy at the candidate source commit",
@@ -1828,14 +1842,8 @@ def promote(args) -> dict:
             f"Assets and `{MANIFEST}` are byte-for-byte copies of the verified release candidate.",
         )
         if manifest.get("version_plan"):
-            verify_promotion_order(gh, manifest["version_plan"])
-            # pylint: disable-next=import-outside-toplevel
-            if TYPE_CHECKING or __package__:
-                from .release_state import begin_publication
-            else:
-                from release_state import begin_publication
-
-            begin_publication(gh, manifest["version_plan"], current_id, promotion=True)
+            _verify_versioned_promotion(gh, manifest["version_plan"])
+            _begin_versioned_promotion(gh, manifest["version_plan"], current_id)
         release = _publish_prepared(
             gh,
             tag,
