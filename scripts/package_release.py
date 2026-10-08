@@ -7,7 +7,9 @@ import io
 import json
 import re
 import shutil
-import subprocess
+
+# CI tools use fixed executable choices and argv; no shell interpolation.
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tomllib
@@ -35,7 +37,8 @@ def validate_version(root: Path, version: str, channel: str) -> None:
         raise ValueError(message)
     policy = json.loads((root / ".release-policy.json").read_text())
     if "versioning" in policy:
-        subprocess.run(
+        # Build/verification command from checked repository policy; argv remains data.
+        subprocess.run(  # nosec B603
             [
                 sys.executable,
                 str(Path(__file__).with_name("release_version_adapter.py")),
@@ -66,7 +69,8 @@ def validate_version(root: Path, version: str, channel: str) -> None:
 def package_inputs(root: Path, config: PackageConfig) -> tuple[list[str], list[str]]:
     """Select only declared Git-tracked files and require every native runtime input."""
     tracked = (
-        subprocess.check_output(["git", "ls-files", "-z"], cwd=root)
+        # Build/verification command from checked repository policy; argv remains data.
+        subprocess.check_output(["git", "ls-files", "-z"], cwd=root)  # nosec B603, B607
         .decode()
         .split("\0")
     )
@@ -144,12 +148,14 @@ def build_distributions(
             destination = project / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
-        subprocess.run(
+        # Build/verification command from checked repository policy; argv remains data.
+        subprocess.run(  # nosec B603
             [sys.executable, "-m", "build", "--outdir", str(output), str(project)],
             check=True,
         )
     distributions = sorted(output.glob("*.whl")) + sorted(output.glob("*.tar.gz"))
-    subprocess.run(
+    # Build/verification command from checked repository policy; argv remains data.
+    subprocess.run(  # nosec B603
         [
             sys.executable,
             "-m",

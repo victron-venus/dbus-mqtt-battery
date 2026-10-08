@@ -34,6 +34,73 @@ def _number(row: dict[str, Any], key: str) -> float:
     return float(value)
 
 
+def _complete_evidence(row: dict[str, Any], cells_per_bms: int) -> tuple[float, list]:
+    """Require fresh physical evidence and the configured cell inventory."""
+    if ("seen_mask" in row or "valid_mask" in row) and (
+        row.get("seen_mask") != 511 or row.get("valid_mask") != 511
+    ):
+        raise ValueError("ready frame has incomplete physical evidence")
+    age = _number(row, "age_ms") / 1000.0
+    if not 0 <= age < STALE_TIMEOUT:
+        raise ValueError("physical sample is expired")
+    cells = row.get("cells")
+    if not isinstance(cells, list) or len(cells) != cells_per_bms:
+        raise ValueError("missing configured cell voltages")
+    return age, cells
+
+
+def _update_measurements(row: dict[str, Any], battery: BatteryData, cells: list) -> None:
+    """Populate required physical values without publishing a partial snapshot."""
+    for field in ("voltage", "current", "soc", "temperature"):
+        battery.update(field, _number(row, field))
+    temperatures = row.get("temperatures")
+    if temperatures is not None:
+        if not isinstance(temperatures, list) or not temperatures:
+            raise ValueError("invalid temperatures array")
+        for index, temperature in enumerate(temperatures, 1):
+            battery.update(
+                f"temperature_{index}", _number({"temperature": temperature}, "temperature")
+            )
+    for index, cell in enumerate(cells, 1):
+        value = _number({"cell": cell}, "cell")
+        if value <= 0:
+            raise ValueError("invalid cell voltage")
+        battery.update(f"cell_{index}", value)
+
+
+def _update_optional_fields(row: dict[str, Any], battery: BatteryData) -> None:
+    """Invalid optional counters must not discard an otherwise valid sample."""
+    for field, target in (("capacity", "capacity_remaining"), ("cycles", "cycles")):
+        if field in row:
+            try:
+                value = _number(row, field)
+            except (ValueError, TypeError, OverflowError):
+                continue
+            if value >= 0 and (field != "cycles" or value.is_integer()):
+                battery.update(target, value)
+
+
+def _decode_complete_row(
+    row: dict[str, Any], battery: BatteryData, cells_per_bms: int, now: float
+) -> None:
+    """Build one detached battery and retain its original physical sample age."""
+    age, cells = _complete_evidence(row, cells_per_bms)
+    _update_measurements(row, battery, cells)
+    for field in ("charging", "discharging", "online"):
+        if type(row.get(field)) is not bool:
+            raise ValueError(f"missing {field} status")
+        battery.update(field, row[field])
+    _update_optional_fields(row, battery)
+    # Preserve the sensor's age; receipt time must not rejuvenate old readings.
+    # The decoder initializes the entire detached model before publication.
+    # pylint: disable-next=protected-access
+    battery._sample_times = {key: now - age for key in battery._sample_times}
+    battery.mark_sample_time(["charging", "discharging", "online"], now - age)
+    battery.last_update = now - age
+    if not battery.is_valid():
+        raise ValueError("invalid or offline BMS in ready frame")
+
+
 def decode_batteries(
     frame: dict[str, Any], battery_count: int, bms_first: int, cells_per_bms: int, now: float
 ) -> dict[int, BatteryData]:
@@ -54,55 +121,86 @@ def decode_batteries(
         if slot in seen:
             raise ValueError("duplicate BMS id")
         seen.add(slot)
-        if ("seen_mask" in row or "valid_mask" in row) and (
-            row.get("seen_mask") != 511 or row.get("valid_mask") != 511
-        ):
-            raise ValueError("ready frame has incomplete physical evidence")
-        age = _number(row, "age_ms") / 1000.0
-        if not 0 <= age < STALE_TIMEOUT:
-            raise ValueError("physical sample is expired")
-        cells = row.get("cells")
-        if not isinstance(cells, list) or len(cells) != cells_per_bms:
-            raise ValueError("missing configured cell voltages")
-        battery = batteries[slot]
-        for field in ("voltage", "current", "soc", "temperature"):
-            battery.update(field, _number(row, field))
-        temperatures = row.get("temperatures")
-        if temperatures is not None:
-            if not isinstance(temperatures, list) or not temperatures:
-                raise ValueError("invalid temperatures array")
-            for index, temperature in enumerate(temperatures, 1):
-                battery.update(
-                    f"temperature_{index}", _number({"temperature": temperature}, "temperature")
-                )
-        for index, cell in enumerate(cells, 1):
-            value = _number({"cell": cell}, "cell")
-            if value <= 0:
-                raise ValueError("invalid cell voltage")
-            battery.update(f"cell_{index}", value)
-        for field in ("charging", "discharging", "online"):
-            if type(row.get(field)) is not bool:
-                raise ValueError(f"missing {field} status")
-            battery.update(field, row[field])
-        for field, target in (("capacity", "capacity_remaining"), ("cycles", "cycles")):
-            if field in row:
-                try:
-                    value = _number(row, field)
-                except (ValueError, TypeError, OverflowError):
-                    continue
-                if value >= 0 and (field != "cycles" or value.is_integer()):
-                    battery.update(target, value)
-        # Preserve the sensor's age; receipt time must not rejuvenate old readings.
-        # The decoder initializes the entire detached model before publication.
-        # pylint: disable-next=protected-access
-        battery._sample_times = {key: now - age for key in battery._sample_times}
-        battery.mark_sample_time(["charging", "discharging", "online"], now - age)
-        battery.last_update = now - age
-        if not battery.is_valid():
-            raise ValueError("invalid or offline BMS in ready frame")
+        _decode_complete_row(row, batteries[slot], cells_per_bms, now)
     if len(seen) != battery_count:
         raise ValueError("telemetry is missing a configured BMS")
     return batteries
+
+
+def _partial_evidence(row: dict[str, Any], battery: BatteryData) -> tuple[int, float]:
+    """Check producer masks before any observed field can refresh local data."""
+    if battery.cell_count != 4:
+        raise ValueError("partial schema 1 evidence requires four cells per BMS")
+    seen, valid = row.get("seen_mask"), row.get("valid_mask")
+    if (
+        type(seen) is not int
+        or type(valid) is not int
+        or not 0 <= seen <= 511
+        or not 0 <= valid <= 511
+        or valid & ~seen
+    ):
+        raise ValueError("invalid partial evidence masks")
+    if seen != valid:
+        raise ValueError("producer observed an invalid physical field")
+    age = _number(row, "observed_age_ms") / 1000.0
+    if not 0 <= age <= STALE_TIMEOUT or (seen and age >= STALE_TIMEOUT):
+        raise ValueError("partial physical evidence expired")
+    return seen, age
+
+
+def _partial_sample_time(battery: BatteryData, sampled_at: float, refresh: bool) -> float:
+    """A rebooted producer cannot extend previously established freshness."""
+    if not refresh:
+        previous_time = battery.oldest_sample_time
+        if previous_time is not None:
+            return min(sampled_at, previous_time)
+    return sampled_at
+
+
+def _observed_field(row: dict[str, Any], cells: list, index: int) -> tuple[str, float]:
+    """Decode one evidenced scalar or cell voltage before touching its timestamp."""
+    names = ("voltage", "current", "soc", "temperature")
+    key = names[index] if index < 4 else f"cell_{index - 3}"
+    value = _number(row, key) if index < 4 else _number({key: cells[index - 4]}, key)
+    if (index == 0 or index >= 4) and value <= 0:
+        raise ValueError("invalid observed voltage")
+    if key == "soc" and not 0 <= value <= 100:
+        raise ValueError("invalid observed SoC")
+    return key, value
+
+
+def _merge_partial_numbers(
+    row: dict[str, Any], battery: BatteryData, seen: int, age: float, now: float, refresh: bool
+) -> None:
+    """Apply only physical fields explicitly evidenced by this partial frame."""
+    cells = row.get("cells")
+    if not isinstance(cells, list) or len(cells) != 4:
+        raise ValueError("invalid partial cells")
+    for index in range(8):
+        if not seen & (1 << index):
+            continue
+        key, value = _observed_field(row, cells, index)
+        field = "temperature_1" if key == "temperature" else key
+        sampled_at = _partial_sample_time(battery, now - age, refresh)
+        battery.update(key, value)
+        battery.mark_sample_time([field], sampled_at)
+
+
+def _merge_partial_status(
+    row: dict[str, Any], battery: BatteryData, seen: int, sampled_at: float, refresh: bool
+) -> None:
+    """Partial positive MOS states cannot lift a previously established veto."""
+    if seen & 256:
+        for field in ("charging", "discharging"):
+            permission = row.get(field)
+            if type(permission) is not bool:
+                raise ValueError("invalid observed MOS status")
+            if permission is False:
+                battery.update(field, False)
+        if refresh:
+            battery.mark_sample_time(["charging", "discharging", "online"], sampled_at)
+    if seen == 511 and row.get("online") is not True:
+        raise ValueError("complete observed BMS explicitly offline")
 
 
 def merge_partial(
@@ -125,7 +223,6 @@ def merge_partial(
         raise TypeError("partial frame has no BMS rows")
     result = {slot: battery.copy() for slot, battery in previous.items()}
     found = set()
-    names = ("voltage", "current", "soc", "temperature")
     for row in rows:
         if not isinstance(row, dict) or type(row.get("id")) is not int:
             raise ValueError("invalid partial BMS id")
@@ -136,57 +233,11 @@ def merge_partial(
             raise ValueError("duplicate partial BMS id")
         found.add(slot)
         battery = result[slot]
-        if battery.cell_count != 4:
-            raise ValueError("partial schema 1 evidence requires four cells per BMS")
-        seen, valid = row.get("seen_mask"), row.get("valid_mask")
-        if (
-            type(seen) is not int
-            or type(valid) is not int
-            or not 0 <= seen <= 511
-            or not 0 <= valid <= 511
-            or valid & ~seen
-        ):
-            raise ValueError("invalid partial evidence masks")
-        if seen != valid:
-            raise ValueError("producer observed an invalid physical field")
-        age = _number(row, "observed_age_ms") / 1000.0
-        if not 0 <= age <= STALE_TIMEOUT or (seen and age >= STALE_TIMEOUT):
-            raise ValueError("partial physical evidence expired")
+        seen, age = _partial_evidence(row, battery)
         if not seen:
             continue
-        cells = row.get("cells")
-        if not isinstance(cells, list) or len(cells) != 4:
-            raise ValueError("invalid partial cells")
-        for index in range(8):
-            if not seen & (1 << index):
-                continue
-            key = names[index] if index < 4 else f"cell_{index - 3}"
-            value = _number(row, key) if index < 4 else _number({key: cells[index - 4]}, key)
-            if (index == 0 or index >= 4) and value <= 0:
-                raise ValueError("invalid observed voltage")
-            if key == "soc" and not 0 <= value <= 100:
-                raise ValueError("invalid observed SoC")
-            field = "temperature_1" if key == "temperature" else key
-            sampled_at = now - age
-            if not refresh:
-                # Rebooted producers must supply a complete frame before any
-                # old physical evidence can gain a new freshness deadline.
-                previous_time = battery.oldest_sample_time
-                if previous_time is not None:
-                    sampled_at = min(sampled_at, previous_time)
-            battery.update(key, value)
-            battery.mark_sample_time([field], sampled_at)
-        if seen & 256:
-            for field in ("charging", "discharging"):
-                permission = row.get(field)
-                if type(permission) is not bool:
-                    raise ValueError("invalid observed MOS status")
-                if permission is False:
-                    battery.update(field, False)
-            if refresh:
-                battery.mark_sample_time(["charging", "discharging", "online"], now - age)
-        if seen == 511 and row.get("online") is not True:
-            raise ValueError("complete observed BMS explicitly offline")
+        _merge_partial_numbers(row, battery, seen, age, now, refresh)
+        _merge_partial_status(row, battery, seen, now - age, refresh)
     if len(found) != len(previous):
         raise ValueError("partial frame missing a configured BMS row")
     return result

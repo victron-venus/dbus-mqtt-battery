@@ -1,7 +1,9 @@
 """Exercise the deployed source-overlay script with a local GitHub-shaped archive."""
 
 import os
-import subprocess
+
+# Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+import subprocess  # nosec B404
 import tarfile
 from pathlib import Path
 
@@ -39,7 +41,8 @@ def test_source_overlay_preserves_local_configuration_and_supervisors(tmp_path):
     wget = bin_dir / "wget"
     wget.write_text('#!/bin/sh\ncp "$TEST_ARCHIVE" "$2"\n')
     wget.chmod(0o755)
-    subprocess.run(
+    # Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+    subprocess.run(  # nosec B603, B607
         ["sh", str(remote_script), "victron-venus/" + package, str(installed)],
         env=dict(
             os.environ,

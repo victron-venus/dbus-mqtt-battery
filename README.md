@@ -317,3 +317,9 @@ process restart loses the in-memory `READY`/`STALE` and sequence history and sta
 initializing again. No saved measurement is replayed as a fresh safety permission.
 Sample age is measured at the producer's publication; arbitrary network buffering
 time is not observable without an additional clock or request/response protocol.
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reports, development checks and pull requests,
+[SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment trust boundaries,
+and the [OpenSSF evidence index](docs/openssf-evidence.md) for assessment references and remaining verification.

@@ -1,7 +1,9 @@
 """Validate the shipped archive rather than importing the source checkout."""
 
 import hashlib
-import subprocess
+
+# Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tomllib
@@ -30,7 +32,8 @@ def test_archive_contains_importable_runtime(tmp_path):
         package.extractall(tmp_path / "extracted", filter="data")
     root = tmp_path / "extracted/dbus-mqtt-battery"
     assert (root / "version").read_text().strip() == TAG
-    subprocess.run(["bash", "-n", str(root / "setup")], check=True)
+    # Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+    subprocess.run(["bash", "-n", str(root / "setup")], check=True)  # nosec B603, B607
     # Only device-specific libraries are mocked. The package, DVCC module,
     # entrypoint, paho client and version all come from the actual archive.
     smoke = """
@@ -48,7 +51,8 @@ assert entry["VERSION"] == sys.argv[2]
 assert entry["create_poll_function"].__module__ == "dbus_mqtt_battery.dbus_utils"
 assert "dbus_shared" not in sys.modules
 """
-    subprocess.run(
+    # Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+    subprocess.run(  # nosec B603
         [sys.executable, "-I", "-c", smoke, str(root), TAG.removeprefix("v")],
         cwd=tmp_path,
         check=True,
