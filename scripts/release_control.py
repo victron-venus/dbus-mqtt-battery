@@ -1483,6 +1483,28 @@ def _validate_manifest_assets(manifest):
         )
 
 
+def _validate_manifest_plan(manifest: dict, base_version: str) -> None:
+    # Optional imports preserve the standalone legacy engine contract.
+    # pylint: disable-next=import-outside-toplevel
+    if TYPE_CHECKING or __package__:
+        from .version_plan import plan_digest, validate_plan
+    else:
+        from version_plan import plan_digest, validate_plan
+
+    plan = validate_plan(
+        manifest.get("version_plan"),
+        manifest["source_policy"]["data"],
+        manifest["source_sha"],
+    )
+    require(
+        plan["tag"] == manifest["tag"]
+        and plan["channel"] == manifest["channel"]
+        and plan["base_version"] == base_version
+        and manifest.get("plan_sha256") == plan_digest(plan),
+        "Manifest differs from the frozen version plan",
+    )
+
+
 # pylint: disable-next=too-many-locals
 def validate_manifest(
     raw: bytes, repo: str, rc_tag: str, allow_final: bool = False
@@ -1537,25 +1559,7 @@ def validate_manifest(
     validate_policy_snapshot(manifest.get("source_policy"), repo)
     versioning = manifest["source_policy"]["data"].get("versioning")
     if versioning:
-        # Optional imports preserve the standalone legacy engine contract.
-        # pylint: disable-next=import-outside-toplevel
-        if TYPE_CHECKING or __package__:
-            from .version_plan import plan_digest, validate_plan
-        else:
-            from version_plan import plan_digest, validate_plan
-
-        plan = validate_plan(
-            manifest.get("version_plan"),
-            manifest["source_policy"]["data"],
-            manifest["source_sha"],
-        )
-        require(
-            plan["tag"] == manifest["tag"]
-            and plan["channel"] == manifest["channel"]
-            and plan["base_version"] == base_version
-            and manifest.get("plan_sha256") == plan_digest(plan),
-            "Manifest differs from the frozen version plan",
-        )
+        _validate_manifest_plan(manifest, base_version)
     if final:
         require(
             versioning and versioning.get("promotion") == "final-build",
