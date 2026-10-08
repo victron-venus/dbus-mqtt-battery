@@ -471,39 +471,44 @@ class MqttBatteryClient:
             elif attribute == "total_soc":
                 self.soc_total_seen = True
 
+    def _battery_snapshots_locked(self) -> tuple[list[dict[str, Any]], list[float]]:
+        """Copy valid battery frames while the caller holds the aggregate data lock."""
+        batt_snapshots: list[dict[str, Any]] = []
+        oldest_samples: list[float] = []
+        for b in self.batteries.values():
+            with b.lock:
+                if not b.is_valid():
+                    continue
+                oldest_sample = b.oldest_sample_time
+                # Enforce the snapshot contract even under python -O.
+                if b.voltage is None or b.current is None or oldest_sample is None:
+                    continue
+                batt_snapshots.append(
+                    {
+                        "battery_id": b.battery_id,
+                        "voltage": b.voltage,
+                        "current": b.current,
+                        "power": b.power if b.power is not None else b.voltage * b.current,
+                        "soc": b.soc,
+                        "capacity_remaining": b.capacity_remaining,
+                        "temperature": b.temperature,
+                        "temperatures": dict(b.temperatures),
+                        "cells": dict(b.cells),
+                        "cell_count": b.cell_count,
+                        "charging": b.charging,
+                        "discharging": b.discharging,
+                        "cycles": b.cycles,
+                        "online": b.online,
+                    }
+                )
+                oldest_samples.append(oldest_sample)
+        return batt_snapshots, oldest_samples
+
     def get_aggregate_data(self) -> dict[str, Any] | None:
         """Get aggregated data from all batteries (thread-safe)."""
         # Copy battery data under lock to avoid race conditions with MQTT thread
         with self._data_lock:
-            batt_snapshots: list[dict[str, Any]] = []
-            oldest_samples: list[float] = []
-            for b in self.batteries.values():
-                with b.lock:
-                    if not b.is_valid():
-                        continue
-                    oldest_sample = b.oldest_sample_time
-                    # Enforce the snapshot contract even under python -O.
-                    if b.voltage is None or b.current is None or oldest_sample is None:
-                        continue
-                    batt_snapshots.append(
-                        {
-                            "battery_id": b.battery_id,
-                            "voltage": b.voltage,
-                            "current": b.current,
-                            "power": b.power if b.power is not None else b.voltage * b.current,
-                            "soc": b.soc,
-                            "capacity_remaining": b.capacity_remaining,
-                            "temperature": b.temperature,
-                            "temperatures": dict(b.temperatures),
-                            "cells": dict(b.cells),
-                            "cell_count": b.cell_count,
-                            "charging": b.charging,
-                            "discharging": b.discharging,
-                            "cycles": b.cycles,
-                            "online": b.online,
-                        }
-                    )
-                    oldest_samples.append(oldest_sample)
+            batt_snapshots, oldest_samples = self._battery_snapshots_locked()
             if not batt_snapshots:
                 return None
             # Copy totals and physical timestamps under the same lock as cells
