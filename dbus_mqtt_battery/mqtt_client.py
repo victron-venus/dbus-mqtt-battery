@@ -188,72 +188,76 @@ class MqttBatteryClient:
                         self.telemetry_partial = True
                         self.telemetry_error = "Producer offline; using unexpired physical evidence"
                 return
-            if not topic.startswith(f"{self.topic_prefix}/"):
-                return
-
-            # Parse topic: battery/sensor/voltage_bms1/state
-            #           or battery/binary_sensor/charging_bms1/state
-            parts = topic[len(self.topic_prefix) + 1 :].split("/")
-            if len(parts) < 3:
-                return
-
-            # "sensor" or "binary_sensor" - extracted but not currently used
-            _sensor_type = parts[0]
-            sensor_name = parts[1]  # "voltage_bms1", "voltage_total", etc.
-
-            # Handle totals
-            if sensor_name.endswith("_total"):
-                self._update_total(sensor_name, payload)
-                return
-
-            # Extract battery index from name (e.g., "voltage_bms1" -> bms1 -> 1)
-            match = re.search(r"bms(\d+)$", sensor_name)
-            if not match:
-                return
-
-            bms_idx_mqtt = int(match.group(1))
-            # Map MQTT bms index to internal slot (chain2: bms3,bms4 -> internal 1,2)
-            bms_idx = bms_idx_mqtt - self.bms_first + 1
-            if bms_idx < 1 or bms_idx > self.battery_count:
-                return
-
-            # Extract sensor type (e.g., "voltage_bms1" -> "voltage")
-            sensor_key = re.sub(r"_bms\d+$", "", sensor_name)
-
-            # Map sensor names to battery attributes
-            mapping = {
-                "voltage": "voltage",
-                "current": "current",
-                "power": "power",
-                "soc": "soc",
-                "capacity_remaining": "capacity_remaining",
-                "capacity": "capacity_total",
-                "cycles": "cycles",
-                "charging": "charging",
-                "discharging": "discharging",
-                "balancing": "balancing",
-                "online": "online",
-            }
-
-            # Handle cell voltages: voltage_cell1 -> cell_1
-            if sensor_key.startswith("voltage_cell"):
-                cell_num = sensor_key.replace("voltage_cell", "")
-                self.batteries[bms_idx].update(f"cell_{cell_num}", payload)
-            # Handle temperature sensors: temperature1 -> temperature_1
-            elif sensor_key.startswith("temperature"):
-                temp_num = sensor_key.replace("temperature", "")
-                if temp_num:
-                    self.batteries[bms_idx].update(f"temperature_{temp_num}", payload)
-                else:
-                    self.batteries[bms_idx].update("temperature", payload)
-            elif sensor_key in mapping:
-                self.batteries[bms_idx].update(mapping[sensor_key], payload)
+            self._process_legacy_topic(topic, payload)
 
         except Exception as e:  # noqa: BLE001 - keep MQTT loop alive on any bad payload
             if msg.topic == f"{self.topic_prefix}/telemetry":
                 self.telemetry_source = "atomic"
                 self._invalidate_samples(f"Unreadable atomic telemetry: {e}")
             logger.debug("Error processing MQTT message: %s", e)
+
+    def _process_legacy_topic(self, topic: str, payload: str) -> None:
+        """Route legacy topics after atomic-protocol and transport checks."""
+        if not topic.startswith(f"{self.topic_prefix}/"):
+            return
+
+        # Parse topic: battery/sensor/voltage_bms1/state
+        #           or battery/binary_sensor/charging_bms1/state
+        parts = topic[len(self.topic_prefix) + 1 :].split("/")
+        if len(parts) < 3:
+            return
+
+        # "sensor" or "binary_sensor" - extracted but not currently used
+        _sensor_type = parts[0]
+        sensor_name = parts[1]  # "voltage_bms1", "voltage_total", etc.
+
+        # Handle totals
+        if sensor_name.endswith("_total"):
+            self._update_total(sensor_name, payload)
+            return
+
+        # Extract battery index from name (e.g., "voltage_bms1" -> bms1 -> 1)
+        match = re.search(r"bms(\d+)$", sensor_name)
+        if not match:
+            return
+
+        bms_idx_mqtt = int(match.group(1))
+        # Map MQTT bms index to internal slot (chain2: bms3,bms4 -> internal 1,2)
+        bms_idx = bms_idx_mqtt - self.bms_first + 1
+        if bms_idx < 1 or bms_idx > self.battery_count:
+            return
+
+        # Extract sensor type (e.g., "voltage_bms1" -> "voltage")
+        sensor_key = re.sub(r"_bms\d+$", "", sensor_name)
+
+        # Map sensor names to battery attributes
+        mapping = {
+            "voltage": "voltage",
+            "current": "current",
+            "power": "power",
+            "soc": "soc",
+            "capacity_remaining": "capacity_remaining",
+            "capacity": "capacity_total",
+            "cycles": "cycles",
+            "charging": "charging",
+            "discharging": "discharging",
+            "balancing": "balancing",
+            "online": "online",
+        }
+
+        # Handle cell voltages: voltage_cell1 -> cell_1
+        if sensor_key.startswith("voltage_cell"):
+            cell_num = sensor_key.replace("voltage_cell", "")
+            self.batteries[bms_idx].update(f"cell_{cell_num}", payload)
+        # Handle temperature sensors: temperature1 -> temperature_1
+        elif sensor_key.startswith("temperature"):
+            temp_num = sensor_key.replace("temperature", "")
+            if temp_num:
+                self.batteries[bms_idx].update(f"temperature_{temp_num}", payload)
+            else:
+                self.batteries[bms_idx].update("temperature", payload)
+        elif sensor_key in mapping:
+            self.batteries[bms_idx].update(mapping[sensor_key], payload)
 
     def _process_telemetry(self, payload: str) -> None:
         """Accept one ordered, complete producer frame under the aggregate lock."""

@@ -75,12 +75,7 @@ class BatteryData:
             if key == "temperature":
                 key = "temperature_1"
             if key in _BOOL_KEYS:
-                text = str(value).upper()
-                if text not in ("ON", "TRUE", "1", "OFF", "FALSE", "0"):
-                    if key in ("charging", "discharging", "online"):
-                        setattr(self, key, None)
-                    return
-                setattr(self, key, text in ("ON", "TRUE", "1"))
+                self._update_boolean(key, value)
                 return
             try:
                 numeric = float(value)
@@ -88,15 +83,7 @@ class BatteryData:
                     if key in self._sample_times:
                         self._sample_times[key] = float("-inf")
                     return
-                if key.startswith("temperature_"):
-                    self._update_temperature_sensor(key, numeric)
-                elif key.startswith("cell_"):
-                    self._update_cell_voltage(key, numeric)
-                elif key in _FLOAT_KEYS:
-                    setattr(self, key, numeric)
-                elif key in _INT_KEYS:
-                    setattr(self, key, int(numeric))
-                else:
+                if not self._store_numeric(key, numeric):
                     return
             except (TypeError, ValueError, OverflowError):
                 if key in self._sample_times:
@@ -106,6 +93,29 @@ class BatteryData:
             if key in _LIVE_KEYS or key.startswith(("cell_", "temperature_")):
                 self.last_update = monotonic()
                 self._sample_times[key] = self.last_update
+
+    def _update_boolean(self, key: str, value: Any) -> None:
+        """Update permission/status values without renewing physical samples."""
+        text = str(value).upper()
+        if text not in ("ON", "TRUE", "1", "OFF", "FALSE", "0"):
+            if key in ("charging", "discharging", "online"):
+                setattr(self, key, None)
+            return
+        setattr(self, key, text in ("ON", "TRUE", "1"))
+
+    def _store_numeric(self, key: str, numeric: float) -> bool:
+        """Store a recognized numeric field; the caller owns sample freshness."""
+        if key.startswith("temperature_"):
+            self._update_temperature_sensor(key, numeric)
+        elif key.startswith("cell_"):
+            self._update_cell_voltage(key, numeric)
+        elif key in _FLOAT_KEYS:
+            setattr(self, key, numeric)
+        elif key in _INT_KEYS:
+            setattr(self, key, int(numeric))
+        else:
+            return False
+        return True
 
     def copy(self) -> BatteryData:
         """Clone detached values for an atomic partial-frame replacement."""
