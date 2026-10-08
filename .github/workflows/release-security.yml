@@ -22,7 +22,7 @@ jobs:
           python-version: '3.12.13'
       - name: Install Bandit
         run: >-
-          python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-bandit-1.9.2.txt
+          python3 -m pip install --require-hashes --only-binary=:all: -r .github/requirements-bandit.txt
       - name: Block high severity Python findings
         run: python scripts/run_bandit.py
       - name: Block high and critical dependency and secret findings
