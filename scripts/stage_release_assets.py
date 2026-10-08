@@ -16,9 +16,16 @@ import shutil
 import subprocess  # nosec B404
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import version_plan
-from release_version_adapter import resolve_plan_path
+if TYPE_CHECKING or __package__:
+    from . import version_plan
+else:
+    import version_plan
+if TYPE_CHECKING or __package__:
+    from .release_version_adapter import resolve_plan_path
+else:
+    from release_version_adapter import resolve_plan_path
 
 
 def checked_payload_path(root: Path, matched: str) -> Path:

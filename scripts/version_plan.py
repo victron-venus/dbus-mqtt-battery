@@ -34,9 +34,13 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import TYPE_CHECKING
 
 import tomllib
-from release_control import atomic_write_bytes
+if TYPE_CHECKING or __package__:
+    from .release_control import atomic_write_bytes
+else:
+    from release_control import atomic_write_bytes
 
 BASE = re.compile(r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\Z", re.ASCII)
 SHA = re.compile(r"[0-9a-f]{40}\Z", re.ASCII)

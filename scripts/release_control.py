@@ -24,6 +24,7 @@ import time
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 from urllib.parse import quote, unquote
 
 WORKFLOW = ".github/workflows/release-pipeline.yml"
@@ -31,7 +32,7 @@ GITHUB_HOSTNAME = "github.com"
 MANIFEST = "release-manifest.json"
 POLICY = ".release-policy.json"
 EVIDENCE = Path(".release-evidence") / MANIFEST
-ASSET_RESTRICTIONS = ()
+ASSET_RESTRICTIONS: tuple[dict, ...] = ()
 VERSION_PATTERN = r"(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)"
 VERSION_RE = re.compile(VERSION_PATTERN, re.ASCII)
 TAG_RE = re.compile(
@@ -102,7 +103,7 @@ def positive(value: object, name: str) -> int:
         isinstance(value, (str, int)) and not isinstance(value, bool), f"Invalid {name}"
     )
     require(bool(re.fullmatch(r"[1-9]\d*", str(value), re.ASCII)), f"Invalid {name}")
-    return int(value)
+    return int(cast(str | int, value))
 
 
 def digest(data: bytes) -> str:
@@ -151,7 +152,7 @@ def stream_identity(source, destination=None) -> dict:
     return {"size": size, "sha256": checksum.hexdigest()}
 
 
-def download_asset(gh, asset_id: int, destination: Path) -> dict:
+def download_asset(gh, asset_id: object, destination: Path) -> dict:
     """Stage one asset exclusively and discard incomplete or failed downloads."""
     path = f"releases/assets/{positive(asset_id, 'asset ID')}"
     output = destination.open("xb+")
@@ -231,7 +232,7 @@ class GitHub:
             b"\n\n"
         )
         require(bool(separator), "Publication token permission headers are missing")
-        scopes = set()
+        scopes: set[str] = set()
         for line in headers.decode("utf-8", errors="replace").splitlines():
             key, colon, value = line.partition(":")
             if colon and key.lower() == "x-oauth-scopes":
@@ -246,6 +247,7 @@ class GitHub:
             and repository["permissions"].get("push") is True,
             "Publication token cannot write the expected repository",
         )
+        repository = cast(dict, repository)
         require(
             "workflow" in scopes
             and (
@@ -344,10 +346,12 @@ class GitHub:
         raw = self.request(path, mode="pages")
         pages = parse_json(raw, path)
         require(isinstance(pages, list), f"Invalid pagination response: {path}")
-        records = []
+        pages = cast(list, pages)
+        records: list[object] = []
         for page in pages:
             values = page.get(field) if field and isinstance(page, dict) else page
             require(isinstance(values, list), f"Invalid paginated records: {path}")
+            values = cast(list, values)
             records.extend(values)
         return records
 
@@ -448,6 +452,7 @@ def repository_info(gh: GitHub) -> dict:
 def require_release_policy(policy: object, repo: str, qualified: bool) -> None:
     """Check policy identity, release mode, and required eligibility blockers."""
     require(isinstance(policy, dict), "Source release policy must be an object")
+    policy = cast(dict, policy)
     require(
         isinstance(policy.get("repository"), str)
         and policy["repository"].lower() == repo.lower(),
@@ -518,6 +523,7 @@ def validate_policy_snapshot(snapshot: object, repo: str) -> None:
         and snapshot.get("path") == POLICY,
         "Manifest requires a versioned source policy snapshot",
     )
+    snapshot = cast(dict, snapshot)
     require(
         isinstance(snapshot.get("git_blob_sha"), str)
         and SHA_RE.fullmatch(snapshot["git_blob_sha"])
@@ -737,7 +743,9 @@ def check_execution(
     if event == "workflow_dispatch":
         event_file = os.environ.get("GITHUB_EVENT_PATH")
         require(bool(event_file), "Missing workflow dispatch event")
-        payload = parse_json(Path(event_file).read_bytes(), "workflow dispatch event")
+        payload = parse_json(
+            Path(cast(str, event_file)).read_bytes(), "workflow dispatch event"
+        )
         require(
             isinstance(payload, dict)
             and payload.get("inputs", {}).get("channel") == channel,
@@ -1021,7 +1029,7 @@ def _release_fence(line: str) -> tuple[str, int, str] | None:
 def _release_code_span_ends(line: str) -> dict[int, int]:
     """Find equal-length inline backtick pairs in one linear scan and reverse pass."""
     runs = [(match.start(), match.end()) for match in re.finditer(r"`+", line)]
-    following = {}
+    following: dict[int, int] = {}
     ends = {}
     for start, end in reversed(runs):
         length = end - start
@@ -1121,21 +1129,42 @@ def _release_sections(text: str, level: int):
         yield title, text[start:end].strip(), visible[start:end]
 
 
+def _release_container_content(line: str) -> str:
+    """Ignore empty Markdown containers without discarding literal code content."""
+    line = line.expandtabs(4).strip()
+    marker = re.compile(r">|(?:[-+*]|\d{1,9}[.)])(?=[ \t]|$)", re.ASCII)
+    position = 0
+    list_item = False
+    while match := marker.match(line, position):
+        list_item = match.group() != ">"
+        position = match.end()
+        whitespace = position
+        while position < len(line) and line[position] in " \t":
+            position += 1
+        if position - whitespace >= 5:
+            # After the container separator, four spaces introduce literal code.
+            return line[whitespace:]
+    content = line[position:]
+    if list_item and content in ("[ ]", "[x]", "[X]"):
+        return ""
+    return content
+
+
 def _release_has_guidance(text: str) -> bool:
     """Require visible content beyond comments, headings and separator markers."""
     for line, heading_allowed, guidance in _release_lines(text):
         if not guidance or not line.strip():
             continue
-        if heading_allowed:
-            if re.match(r" {0,3}#{1,6}(?:[ \t\r\n]|$)", line):
-                continue
-            markers = line.strip().replace(" ", "").replace("\t", "")
-            if (
-                len(markers) >= 3
-                and markers[0] in "-*_"
-                and not markers.strip(markers[0])
-            ):
-                continue
+        if not heading_allowed:
+            return True
+        line = _release_container_content(line)
+        if line.startswith(("    ", "\t")):
+            return True
+        if not line or re.match(r" {0,3}#{1,6}(?:[ \t\r\n]|$)", line):
+            continue
+        markers = line.strip().replace(" ", "").replace("\t", "")
+        if len(markers) >= 3 and markers[0] in "-*_" and not markers.strip(markers[0]):
+            continue
         return True
     return False
 
@@ -1170,7 +1199,7 @@ def release_notes(gh: GitHub, tag: str, sha: str, provenance: str) -> str:
         return provenance
     require(source == "CHANGELOG.md", "Unsupported release notes source")
     require(TAG_RE.fullmatch(tag), "Invalid release notes tag")
-    base_version = VERSION_RE.match(tag[1:]).group(0)
+    base_version = cast(re.Match[str], VERSION_RE.match(tag[1:])).group(0)
     response = gh.api(f"contents/CHANGELOG.md?ref={sha}")
     require(
         isinstance(response, dict)
@@ -1454,6 +1483,7 @@ def validate_manifest(
         and manifest["schema"] == 1,
         "Unsupported manifest schema",
     )
+    manifest = cast(dict, manifest)
     require(
         isinstance(manifest.get("repository"), str)
         and manifest["repository"].lower() == repo.lower(),
@@ -1461,6 +1491,7 @@ def validate_manifest(
     )
     base_version = manifest.get("version")
     require(isinstance(base_version, str), "Missing manifest version")
+    base_version = cast(str, base_version)
     version(base_version)
     final = allow_final and manifest.get("channel") == "stable"
     if final:
@@ -1494,7 +1525,10 @@ def validate_manifest(
     if versioning:
         # Optional imports preserve the standalone legacy engine contract.
         # pylint: disable-next=import-outside-toplevel
-        from version_plan import plan_digest, validate_plan
+        if TYPE_CHECKING or __package__:
+            from .version_plan import plan_digest, validate_plan
+        else:
+            from version_plan import plan_digest, validate_plan
 
         plan = validate_plan(
             manifest.get("version_plan"),
@@ -1519,6 +1553,7 @@ def validate_manifest(
             and set(parent) == {"tag", "manifest_sha256", "source_sha", "run_id"},
             "Final manifest needs accepted RC provenance",
         )
+        parent = cast(dict, parent)
         require(
             isinstance(parent["tag"], str)
             and re.fullmatch(rf"v{re.escape(base_version)}-rc\.[1-9]\d*", parent["tag"])
@@ -1704,7 +1739,10 @@ def promote(args) -> dict:
     )
     if manifest.get("version_plan"):
         # pylint: disable-next=import-outside-toplevel
-        from release_state import verify_promotion_order
+        if TYPE_CHECKING or __package__:
+            from .release_state import verify_promotion_order
+        else:
+            from release_state import verify_promotion_order
 
         verify_promotion_order(gh, manifest["version_plan"])
     require(
@@ -1792,7 +1830,10 @@ def promote(args) -> dict:
         if manifest.get("version_plan"):
             verify_promotion_order(gh, manifest["version_plan"])
             # pylint: disable-next=import-outside-toplevel
-            from release_state import begin_publication
+            if TYPE_CHECKING or __package__:
+                from .release_state import begin_publication
+            else:
+                from release_state import begin_publication
 
             begin_publication(gh, manifest["version_plan"], current_id, promotion=True)
         release = _publish_prepared(

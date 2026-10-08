@@ -12,8 +12,12 @@ import re
 import subprocess  # nosec B404
 import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import version_plan
+if TYPE_CHECKING or __package__:
+    from . import version_plan
+else:
+    import version_plan
 
 
 def run(root, *args, capture=True):

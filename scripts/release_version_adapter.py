@@ -11,8 +11,12 @@ import re
 # Subprocess calls below use argument vectors with shell=False.
 import subprocess  # nosec B404
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import version_plan
+if TYPE_CHECKING or __package__:
+    from . import version_plan
+else:
+    import version_plan
 
 
 def resolve_plan_path(root: Path) -> Path:

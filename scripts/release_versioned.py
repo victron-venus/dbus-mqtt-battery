@@ -11,18 +11,40 @@ import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
-import release as client
-import release_control as rc
-import version_plan
-from release_state import (
-    StateGitHub,
-    begin_publication,
-    read_state,
-    reserve_plan,
-    verify_reservation,
-)
-from version_receipt import verify_declared_artifacts, verify_receipts
+if TYPE_CHECKING or __package__:
+    from . import release as client
+else:
+    import release as client
+if TYPE_CHECKING or __package__:
+    from . import release_control as rc
+else:
+    import release_control as rc
+if TYPE_CHECKING or __package__:
+    from . import version_plan
+else:
+    import version_plan
+if TYPE_CHECKING or __package__:
+    from .release_state import (
+        StateGitHub,
+        begin_publication,
+        read_state,
+        reserve_plan,
+        verify_reservation,
+    )
+else:
+    from release_state import (
+        StateGitHub,
+        begin_publication,
+        read_state,
+        reserve_plan,
+        verify_reservation,
+    )
+if TYPE_CHECKING or __package__:
+    from .version_receipt import verify_declared_artifacts, verify_receipts
+else:
+    from version_receipt import verify_declared_artifacts, verify_receipts
 
 PLAN = Path(".release-plan.json")
 MAX_TOOLCHAIN_DIAGNOSTICS = 100
@@ -190,7 +212,12 @@ def event_inputs() -> dict:
     event = rc.parse_json(
         Path(os.environ["GITHUB_EVENT_PATH"]).read_bytes(), "workflow event"
     )
-    return event.get("inputs") or {}
+    rc.require(isinstance(event, dict), "Workflow event must be a JSON object")
+    inputs = cast(dict, event).get("inputs")
+    if inputs is None:
+        return {}
+    rc.require(isinstance(inputs, dict), "Workflow inputs must be a JSON object")
+    return cast(dict, inputs)
 
 
 # Keep integrity checks and mismatch accumulation together at the trust boundary.
