@@ -13,6 +13,7 @@ Aggregates JBD BMS MQTT telemetry and publishes a Victron D-Bus battery service.
 
 ### Maintenance
 
+- Record test and build dependencies in `uv.lock` for reproducible Python checks, preserving the existing locked runtime versions.
 - Separate command-line overrides and legacy MQTT decoding into focused helpers while preserving permission, freshness and atomic-frame handling.
 - Publish reviewed release notes from the exact source commit used to build each candidate, preserving build provenance.
 - Document contribution checks, confidential security reporting and the project-specific trust boundaries.

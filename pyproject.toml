@@ -9,7 +9,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = ["paho-mqtt>=2.1.0"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov"]
+dev = ["pytest", "pytest-cov", "ruff>=0.16.10", "mypy>=2.4.0"]
 test = ["pytest", "pytest-cov"]
 
 [tool.setuptools.packages.find]
@@ -58,3 +58,7 @@ pythonpath = ["."]
 [[tool.mypy.overrides]]
 module = ["dbus", "dbus.*", "gi", "gi.*", "dbus_shared", "vedbus"]
 ignore_missing_imports = true
+
+# Install wheel-only build tools before building the local package without build isolation.
+[dependency-groups]
+build = ["build==1.6.1", "setuptools==84.0.0", "wheel==0.48.0"]
