@@ -51,14 +51,14 @@ appNameArg="$1"
 directoryPathArg="$2"
 
 # Remove trailing slash from directory
-if [ "${directoryPathArg: -1}" == "/" ]; then
+if [[ "${directoryPathArg: -1}" == "/" ]]; then
     directoryPathArg="${directoryPathArg%/}"
 fi
 
 
-checkOverlayRecursive() {
+check_overlay_recursive() {
     local dir="$1"
-    while [ "$dir" != "/" ]; do
+    while [[ "$dir" != "/" ]]; do
         if mount | grep -q "on $dir type overlay"; then
             echo "$dir"
             return 0

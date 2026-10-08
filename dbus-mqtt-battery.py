@@ -360,9 +360,10 @@ class DbusAggregateService:
 
     def _set_communication_error(self, stale: bool) -> None:
         """Update /Alarms/CommunicationError and /System/StaleData from MQTT freshness."""
-        self._dbusservice["/Alarms/CommunicationError"] = (
-            (2 if self._has_ready_data else 1) if stale else 0
-        )
+        alarm = 0
+        if stale:
+            alarm = 2 if self._has_ready_data else 1
+        self._dbusservice["/Alarms/CommunicationError"] = alarm
         self._dbusservice["/System/StaleData"] = 1 if stale else 0
         if stale != self._comm_alarm_active:
             self._comm_alarm_active = stale
@@ -506,6 +507,10 @@ class DbusAggregateService:
         # DVCC: Dynamic Voltage and Current Control
         # Calculate and publish CCL/DCL/CVL for Victron to use
         self._update_dvcc(data)
+        self._apply_partial_frame_limits(data)
+
+    def _apply_partial_frame_limits(self, data: dict[str, Any]) -> None:
+        """Publish limits and state without relaxing a partial frame's protection."""
         # A partial round can tighten limits from newly observed protections,
         # but cannot lift a previously published block or reduced current limit.
         limit_paths = (DBUS_MAX_CHARGE_CURRENT_PATH, DBUS_MAX_DISCHARGE_CURRENT_PATH)
@@ -521,16 +526,16 @@ class DbusAggregateService:
         ):
             if limit == 0:
                 self._dbusservice[path] = 0
-        self._dbusservice[DBUS_TELEMETRY_STATE_PATH] = (
-            "PROTECTION"
-            if (
-                self._dbusservice[DBUS_MAX_CHARGE_CURRENT_PATH] == 0
-                or self._dbusservice[DBUS_MAX_DISCHARGE_CURRENT_PATH] == 0
-            )
-            else "DEGRADED"
-            if data["telemetry_partial"]
-            else "READY"
-        )
+        if (
+            self._dbusservice[DBUS_MAX_CHARGE_CURRENT_PATH] == 0
+            or self._dbusservice[DBUS_MAX_DISCHARGE_CURRENT_PATH] == 0
+        ):
+            telemetry_state = "PROTECTION"
+        elif data["telemetry_partial"]:
+            telemetry_state = "DEGRADED"
+        else:
+            telemetry_state = "READY"
+        self._dbusservice[DBUS_TELEMETRY_STATE_PATH] = telemetry_state
 
     def _update_time_to_go(self, data: dict[str, Any]) -> None:
         """Compute and publish estimated time-to-go (in seconds)."""

@@ -85,7 +85,7 @@ while IFS= read -r line; do
 
         # Check if the app name is in the entry
         for i in "${!appNamesArray[@]}"; do
-            if [ "${appNamesArray[$i]}" == "$1" ]; then
+            if [[ "${appNamesArray[$i]}" == "$1" ]]; then
                 # Remove the app name from the entry
                 unset "appNamesArray[$i]"
 

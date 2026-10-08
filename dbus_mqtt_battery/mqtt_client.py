@@ -315,6 +315,20 @@ class MqttBatteryClient:
             ]
             return "; ".join(missing) or self.telemetry_error
 
+    def _append_cell_voltages(
+        self,
+        batt: dict[str, Any],
+        cells_per_bms: int,
+        all_cells_with_id: list[tuple[int, float]],
+    ) -> None:
+        """Append physical cell readings using the configured chain offset."""
+        for cell_idx, voltage in batt["cells"].items():
+            if voltage and voltage > 0:
+                # Offset global IDs when this chain starts at bms N > 1
+                chain_cell_base = (self.bms_first - 1) * cells_per_bms
+                global_id = chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
+                all_cells_with_id.append((global_id, voltage))
+
     def _collect_cells_and_temps(
         self, valid_batts: list[dict[str, Any]]
     ) -> tuple[list[tuple[int, float]], list[tuple[int, float]], list[float], bool]:
@@ -328,7 +342,7 @@ class MqttBatteryClient:
         not publish ambiguous Min/MaxTemperatureCellId values, while raw
         temperature values remain available for safety extrema.
         """
-        all_cells_with_id = []
+        all_cells_with_id: list[tuple[int, float]] = []
         cells_per_bms = self.cells_per_bms
         temps_per_bms = self.temps_per_bms
 
@@ -337,14 +351,7 @@ class MqttBatteryClient:
         oversized = False
 
         for batt in valid_batts:
-            for cell_idx, voltage in batt["cells"].items():
-                if voltage and voltage > 0:
-                    # Offset global IDs when this chain starts at bms N > 1
-                    chain_cell_base = (self.bms_first - 1) * cells_per_bms
-                    global_id = (
-                        chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
-                    )
-                    all_cells_with_id.append((global_id, voltage))
+            self._append_cell_voltages(batt, cells_per_bms, all_cells_with_id)
             for temp_idx, temp in batt["temperatures"].items():
                 if temp > -40:
                     all_temp_values.append(temp)
