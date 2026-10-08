@@ -416,3 +416,18 @@ class TestTemperatureGlobalIds:
         _c, c, _, _ = self._collect(client, both)
         assert self._ids(a) == self._ids(c) == [1, 2, 3, 4, 5, 6]
         assert self._ids(b) == [5, 6]
+
+
+def test_incomplete_snapshot_is_skipped_even_when_validity_check_accepts_it():
+    client = make_client(battery_count=1)
+    battery = client.batteries[1]
+    refresh_battery(battery)
+    # A future validity check must not let partial data enter arithmetic.
+    with patch.object(type(battery), "is_valid", return_value=True):
+        for field in ("voltage", "current"):
+            original = getattr(battery, field)
+            setattr(battery, field, None)
+            assert client.get_aggregate_data() is None
+            setattr(battery, field, original)
+        battery._sample_times.clear()
+        assert client.get_aggregate_data() is None

@@ -2,7 +2,9 @@
 
 import os
 import re
-import subprocess
+
+# Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+import subprocess  # nosec B404
 import sys
 from pathlib import Path
 
@@ -59,7 +61,8 @@ def test_setup_preserves_supervisor_state_and_records_completion(tmp_path):
         os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], TEST_ROOT=str(tmp_path)
     )
     for _ in range(2):
-        result = subprocess.run(
+        # Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
+        result = subprocess.run(  # nosec B603, B607
             ["bash", str(installer)], env=environment, capture_output=True, text=True, check=False
         )
         assert result.returncode == 0, result.stderr

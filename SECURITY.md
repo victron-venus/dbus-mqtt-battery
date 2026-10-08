@@ -1,39 +1,23 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Reporting a vulnerability
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 2.5.x   | :white_check_mark: |
-| < 2.5   | :x:                |
+Send vulnerability details privately using [GitHub's Report a vulnerability form](https://github.com/victron-venus/dbus-mqtt-battery/security/advisories/new). Include the affected commit or release, reproduction steps, impact and a suggested mitigation if known. Remove live secrets and personal information. Do not open a public issue with exploit details. If private reporting is temporarily unavailable, open a public issue requesting a confidential contact without disclosing the vulnerability.
 
-## Reporting a Vulnerability
+Maintainers aim to acknowledge reports within 14 days, investigate promptly and coordinate disclosure with the reporter. Critical confirmed vulnerabilities receive priority. Confirmed exploitable medium-or-higher issues should be corrected within 60 days of public disclosure; where a fix needs longer, publish the limitation and available mitigation. Release notes should identify any assigned CVE or equivalent advisory identifier for fixes. These are maintenance policies, not claims about historical response times.
 
-Private vulnerability reporting is enabled for this repository. Use
-[Report a vulnerability](https://github.com/victron-venus/dbus-mqtt-battery/security/advisories/new)
-to send a confidential report to the maintainers. Follow
-[GitHub's private reporting instructions](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing/privately-reporting-a-security-vulnerability)
-if you need help submitting the report.
+## Supported code
 
-Include the affected version or commit, steps to reproduce, expected and actual
-behavior, and potential impact. Remove access tokens, credentials and personal
-data from examples. Do not disclose exploit details in public issues before
-coordinating with the maintainers.
+Security fixes are developed on the current default branch and released through the repository's normal delivery process. Older releases are not guaranteed backports; reproduce against the current code where practical and include the original affected version in the report. A prerelease or development build is not a promise of production or hardware acceptance.
 
-## Security Considerations
+## Trust boundaries
 
-This project runs on Venus OS with access to:
+Battery measurements and charging permissions affect downstream DVCC decisions. Restrict MQTT publisher ACLs and D-Bus access; reject incomplete or stale telemetry. The service does not replace a physical BMS, fuses or charger protections. MQTT transport may be plaintext on a trusted LAN unless secured by the deployment.
 
-- MQTT broker (battery data)
-- D-Bus (Victron system)
+## Secure development and delivery
 
-### Recommendations
+Validate external values at trust boundaries, reject unsupported or malformed commands, avoid shell interpolation, preserve certificate verification, and use maintained cryptographic libraries rather than custom cryptography. Apply least privilege to service accounts, repository tokens and filesystem permissions. Follow [CONTRIBUTING.md](CONTRIBUTING.md) for validation and review.
 
-1. **MQTT**: Use authentication on your MQTT broker
-2. **Network**: Run on a trusted local network
-3. **Firewall**: Restrict MQTT port (1883) access
+Obtain source and published artifacts through the repository's HTTPS URLs. Verify published checksums or provenance when provided, over an authenticated channel. Keep local configuration, credentials and private keys out of source control and logs. Report suspected exposure through the private channel so credentials can be revoked and replaced; deleting a file alone does not revoke it.
 
-## Known Limitations
-
-- MQTT connection without TLS by default
-- Designed for trusted home networks only
+[OpenSSF evidence and remaining verification](docs/openssf-evidence.md) is maintained separately from this policy.

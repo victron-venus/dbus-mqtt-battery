@@ -481,9 +481,10 @@ class MqttBatteryClient:
                 with b.lock:
                     if not b.is_valid():
                         continue
-                    assert b.voltage is not None and b.current is not None
                     oldest_sample = b.oldest_sample_time
-                    assert oldest_sample is not None
+                    # Enforce the snapshot contract even under python -O.
+                    if b.voltage is None or b.current is None or oldest_sample is None:
+                        continue
                     batt_snapshots.append(
                         {
                             "battery_id": b.battery_id,
