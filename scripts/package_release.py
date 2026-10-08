@@ -109,21 +109,23 @@ def package_inputs(root: Path, config: PackageConfig) -> tuple[list[str], list[s
 
 def write_archive(root: Path, name: str, selected: list[str], archive: Path) -> None:
     """Preserve native executable modes in a deterministic archive of regular files."""
-    with archive.open("wb") as destination:
-        with gzip.GzipFile(
+    with (
+        archive.open("wb") as destination,
+        gzip.GzipFile(
             filename="", mode="wb", fileobj=destination, mtime=0
-        ) as compressed:
-            with tarfile.open(fileobj=compressed, mode="w") as package:
-                for filename in selected:
-                    path = root / filename
-                    if path.is_symlink() or not path.is_file():
-                        message = f"Refusing non-regular runtime input: {filename}"
-                        raise ValueError(message)
-                    content = path.read_bytes()
-                    entry = tarfile.TarInfo(f"{name}/{filename}")
-                    entry.size = len(content)
-                    entry.mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
-                    package.addfile(entry, io.BytesIO(content))
+        ) as compressed,
+        tarfile.open(fileobj=compressed, mode="w") as package,
+    ):
+        for filename in selected:
+            path = root / filename
+            if path.is_symlink() or not path.is_file():
+                message = f"Refusing non-regular runtime input: {filename}"
+                raise ValueError(message)
+            content = path.read_bytes()
+            entry = tarfile.TarInfo(f"{name}/{filename}")
+            entry.size = len(content)
+            entry.mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+            package.addfile(entry, io.BytesIO(content))
 
 
 def build_distributions(
