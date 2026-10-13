@@ -1,3 +1,8 @@
+# Vendored release toolkit; change the toolkit source, then render again.
+# ruff: noqa
+# mypy: ignore-errors
+# pylint: skip-file
+# fmt: off
 """Run release modules in isolated interpreters without test sys.path mutations."""
 
 import os
@@ -39,6 +44,55 @@ class ReleaseImportTests(unittest.TestCase):
         script = "import importlib; " + "; ".join(
             f"importlib.import_module('scripts.{name}')" for name in MODULES
         )
+        self.run_python("-c", script)
+
+    def test_package_dependencies_share_module_and_exception_identity(self):
+        script = """
+import importlib
+from pathlib import Path
+from scripts import release_control as control
+from scripts import release_state as state
+from scripts import release_versioned as lifecycle
+from scripts import version_plan, version_receipt
+assert lifecycle.rc is control
+assert state.rc is control
+assert lifecycle.StateGitHub is state.StateGitHub
+assert version_plan.atomic_write_bytes is control.atomic_write_bytes
+assert version_receipt.stream_identity is control.stream_identity
+assert issubclass(state.StateGitHub, control.GitHub)
+for name in ('release_provenance', 'release_signing', 'assemble_native_container',
+             'release_container_labels', 'publish_verified', 'runner_preflight',
+             'verified_images', 'write_binary_build_metadata'):
+    if (Path('scripts') / (name + '.py')).is_file():
+        importlib.import_module('scripts.' + name)
+"""
+        self.run_python("-c", script)
+
+    def test_package_lazy_validation_imports(self):
+        script = """
+from pathlib import Path
+from scripts import release_control as control
+policy = {'repository': 'example/project', 'mode': 'release', 'versioning': {},
+          'single_entry_ci': True, 'validation_workflows': ['ci.yml'],
+          'channel_validation_workflows': {'beta': ['beta.yml']}}
+control.require_release_policy(policy, 'example/project', qualified=False)
+assert control.validation_profile(policy, 'beta')['workflows'] == ['beta.yml']
+if Path('scripts/release_fuzz.py').is_file():
+    from scripts import release_fuzz
+    policy['fuzzing'] = {'toolkit_ref': 'a' * 40}
+    control.require_release_policy(policy, 'example/project', qualified=False)
+    manifest = {'source_policy': {'data': policy}, 'channel': 'beta',
+                'validation_profile': control.validation_profile(policy, 'beta'),
+                'fuzzing_profile': release_fuzz.profile(policy, 'beta')}
+    control.validate_validation_manifest(manifest)
+    policy['fuzzing'] = {'toolkit_ref': 'mutable'}
+    try:
+        control.require_release_policy(policy, 'example/project', qualified=False)
+    except control.ReleaseError:
+        pass
+    else:
+        raise AssertionError('Invalid lazy-loaded policy accepted')
+"""
         self.run_python("-c", script)
 
     def test_standalone_importlib_loads(self):

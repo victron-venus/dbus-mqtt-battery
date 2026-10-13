@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [2.7.8] - Development line
 
+### Release candidate validation
+
+- Require bounded fuzzing on public release candidates, with source-bound reports and retained diagnostics; beta and ordinary CI do not run mutation campaigns.
+- Reject oversized numeric telemetry values with the normal validation error.
+
 ### Release overview
 
 Aggregates JBD BMS MQTT telemetry and publishes a Victron D-Bus battery service. The existing README documents configuration and external interfaces for this development line.

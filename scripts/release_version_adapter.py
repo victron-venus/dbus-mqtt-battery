@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+# Vendored release toolkit; change the toolkit source, then render again.
+# ruff: noqa
+# mypy: ignore-errors
+# pylint: skip-file
+# fmt: off
 """Validate a committed base or its frozen build overlay without allocating versions."""
 
 from __future__ import annotations
@@ -7,13 +12,11 @@ import argparse
 import json
 import os
 import re
-
 # Subprocess calls below use argument vectors with shell=False.
 import subprocess  # nosec B404
 from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING or __package__:
+if __package__:
     from . import version_plan
 else:
     import version_plan
