@@ -29,9 +29,15 @@ def decode_header(payload: str) -> tuple[dict[str, Any], str, int]:
 
 def _number(row: dict[str, Any], key: str) -> float:
     value = row.get(key)
-    if not isinstance(value, (float, int)) or isinstance(value, bool) or not math.isfinite(value):
+    if not isinstance(value, (float, int)) or isinstance(value, bool):
+        raise ValueError(f"invalid {key}")  # noqa: TRY004 - parser validation contract
+    try:
+        number = float(value)
+    except OverflowError as error:
+        raise ValueError(f"invalid {key}") from error
+    if not math.isfinite(number):
         raise ValueError(f"invalid {key}")
-    return float(value)
+    return number
 
 
 def _complete_evidence(row: dict[str, Any], cells_per_bms: int) -> tuple[float, list]:
