@@ -1,5 +1,7 @@
 # dbus-mqtt-battery
 
+[![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
+
 [![CI](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Release](https://img.shields.io/github/v/release/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/releases)
@@ -323,3 +325,9 @@ time is not observable without an additional clock or request/response protocol.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for reports, development checks and pull requests,
 [SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment trust boundaries,
 and the [OpenSSF evidence index](docs/openssf-evidence.md) for assessment references and remaining verification.
+
+## Release-candidate fuzzing
+
+The target decodes the real schema-1 MQTT frame and constructs a detached battery snapshot. It verifies ready-state completeness, finite measurements, SoC bounds and preservation of measurement time. The package namespace bypasses D-Bus/GI initialization while loading real telemetry and battery-data modules; the monotonic clock is fixed. No broker connection or battery-control action occurs.
+
+[RC-only fuzzing policy, local reproduction and failure handling](docs/fuzzing.md).

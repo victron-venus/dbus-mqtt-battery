@@ -9,7 +9,8 @@ requires-python = ">=3.12,<3.13"
 dependencies = ["paho-mqtt>=2.1.0"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff>=0.16.10", "mypy>=2.4.0"]
+dev = [
+    "types-atheris>=3.1.0.20260630","pytest", "pytest-cov", "ruff>=0.16.10", "mypy>=2.4.0"]
 test = ["pytest", "pytest-cov"]
 
 [tool.setuptools.packages.find]

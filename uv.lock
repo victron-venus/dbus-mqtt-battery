@@ -107,6 +107,7 @@ dev = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "types-atheris" },
 ]
 test = [
     { name = "pytest" },
@@ -129,6 +130,7 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'" },
     { name = "pytest-cov", marker = "extra == 'test'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16.10" },
+    { name = "types-atheris", marker = "extra == 'dev'", specifier = ">=3.1.0.20260630" },
 ]
 provides-extras = ["dev", "test"]
 
@@ -318,6 +320,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/6d/44/f5da03a8ef95d369145c5bb53050e7877c9f3d312e128605fd9504829143/setuptools-84.0.0.tar.gz", hash = "sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73", size = 1168449, upload-time = "2026-08-08T18:27:58.365Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/95/9c/c510029fc6ef33a6275cd2c5d3cecd6613dfd6aa401d57c54f1c18852ccf/setuptools-84.0.0-py3-none-any.whl", hash = "sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670", size = 818216, upload-time = "2026-08-08T18:27:56.719Z" },
+]
+
+[[package]]
+name = "types-atheris"
+version = "3.1.0.20260630"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/43/c7/cc43b4593b4d501bdb59bf0da105f71b13cba1d474b8994b205704aefdcd/types_atheris-3.1.0.20260630.tar.gz", hash = "sha256:51b1cb0699718105e383437e29f99fef9fbbf734ac32d14266bd8ad46a358493", size = 8709, upload-time = "2026-06-30T05:59:56.884Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/00/871bc99b270bca148ceed5ce9ab5112c0c2244d590cc755e51bdb79ddae6/types_atheris-3.1.0.20260630-py3-none-any.whl", hash = "sha256:f4313997e5bbffb099c14b4d45bf8ca838311297b3a59921bada6fe9cba4ff62", size = 9933, upload-time = "2026-06-30T05:59:55.856Z" },
 ]
 
 [[package]]
