@@ -29,7 +29,23 @@
         "-max_len=4096"
       ],
       "seconds": 60,
-      "corpus": "fuzz/corpus/telemetry"
+      "corpus": "fuzz/corpus/telemetry",
+      "instrumentation": [
+        {
+          "module": "dbus_mqtt_battery.telemetry",
+          "functions": [
+            "decode_header",
+            "decode_batteries"
+          ]
+        }
+      ]
     }
+  ],
+  "preflight-paths": [
+    ".github/requirements-fuzz.in",
+    "dbus_mqtt_battery",
+    "fuzz",
+    "pyproject.toml",
+    "uv.lock"
   ]
 }
