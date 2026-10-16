@@ -1,5 +1,7 @@
 # dbus-mqtt-battery
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15555/badge)](https://www.bestpractices.dev/en/projects/15555)
+
 [![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
 
 [![CI](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml)

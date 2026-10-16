@@ -54,7 +54,10 @@ The runtime implements no cryptographic primitive or password database. Python
 release tooling uses `hashlib` SHA-256 for artifacts and invokes maintained Git,
 GitHub CLI and signature-verification tools; Git object SHA-1 identity is not a
 replacement for artifact authenticity. Follow [release verification](../RELEASING.md)
-and validate the expected repository, source and workflow identity. These tools'
+and validate the expected repository, source and workflow identity. Owned release helpers implement SHA-256 identity checks and call `gh api` for
+HTTPS; they do not instantiate a Python TLS transport. Git object SHA-1 checks
+set `usedforsecurity=False` and payload integrity is bound separately with
+SHA-256. Retry jitter uses noncryptographic randomness solely for delay. These tools'
 HTTPS connections and operator SSH tunnels retain their own verified transport
 configuration. Runtime local-only tests do not validate those external tools or
 an operator's TLS setup.
