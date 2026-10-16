@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -90,6 +91,20 @@ class MqttConfig:
     port: int = DEFAULT_MQTT_PORT
     topic_prefix: str = DEFAULT_TOPIC_PREFIX
     telemetry_mode: str = "atomic"
+    local_only: bool = False
+
+
+def local_broker_address(broker: str) -> str:
+    """Pin a local-only connection to a numeric loopback address without DNS."""
+    if broker.lower() == "localhost":
+        return "127.0.0.1"
+    try:
+        address = ipaddress.ip_address(broker)
+    except ValueError as exc:
+        raise ValueError("local_only requires localhost or a numeric loopback address") from exc
+    if not address.is_loopback:
+        raise ValueError("local_only requires localhost or a numeric loopback address")
+    return str(address)
 
 
 @dataclass
@@ -133,6 +148,8 @@ class Config:
 
     def validate(self) -> None:
         """Raise ValueError for configuration that cannot export safe temperature IDs."""
+        if self.mqtt.local_only:
+            local_broker_address(self.mqtt.broker)
         if self.battery.temps_per_bms < 1:
             raise ValueError("temps_per_bms must be >= 1")
         if self.mqtt.telemetry_mode not in ("atomic", "legacy"):
@@ -149,6 +166,7 @@ class Config:
         dbus = DbusConfig()
 
         if "mqtt" in config:
+            mqtt.local_only = config.getboolean("mqtt", "local_only", fallback=mqtt.local_only)
             mqtt.broker = config.get("mqtt", "broker", fallback=mqtt.broker)
             mqtt.port = config.getint("mqtt", "port", fallback=mqtt.port)
             mqtt.topic_prefix = config.get("mqtt", "topic_prefix", fallback=mqtt.topic_prefix)
@@ -244,6 +262,13 @@ def create_argument_parser() -> argparse.ArgumentParser:
         choices=("atomic", "legacy"),
         default=argparse.SUPPRESS,
         help="Require coherent producer telemetry (default: atomic); legacy opts into weaker freshness",
+    )
+
+    mqtt_group.add_argument(
+        "--local-only",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="Allow only a numeric loopback broker; localhost is pinned to IPv4 loopback",
     )
 
     # Battery settings
@@ -371,6 +396,8 @@ def create_argument_parser() -> argparse.ArgumentParser:
 
 def _merge_mqtt_args(config: Config, args: argparse.Namespace) -> None:
     """Apply explicitly supplied mqtt overrides in command-line order."""
+    if hasattr(args, "local_only"):
+        config.mqtt.local_only = args.local_only
     if hasattr(args, "broker"):
         config.mqtt.broker = args.broker
     if hasattr(args, "port"):

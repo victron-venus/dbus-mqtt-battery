@@ -4,7 +4,7 @@
 
 Send vulnerability details privately using [GitHub's Report a vulnerability form](https://github.com/victron-venus/dbus-mqtt-battery/security/advisories/new). Include the affected commit or release, reproduction steps, impact and a suggested mitigation if known. Remove live secrets and personal information. Do not open a public issue with exploit details. If private reporting is temporarily unavailable, open a public issue requesting a confidential contact without disclosing the vulnerability.
 
-Maintainers aim to acknowledge reports within 14 days, investigate promptly and coordinate disclosure with the reporter. Critical confirmed vulnerabilities receive priority. Confirmed exploitable medium-or-higher issues should be corrected within 60 days of confirmation. Coordinate normal public disclosure with a fix or effective mitigation. If active exploitation or another urgent risk requires earlier warning, promptly publish the affected scope and available protective steps while remediation continues. Release notes should identify any assigned CVE or equivalent advisory identifier for fixes. These are maintenance policies, not claims about historical response times.
+Maintainers aim to acknowledge reports within 14 days, investigate promptly and coordinate disclosure with the reporter. Critical confirmed vulnerabilities receive priority. Publicly known exploitable medium-or-higher vulnerabilities must be corrected within 60 days of becoming publicly known; privately reported confirmed issues receive the same remediation target from confirmation. Coordinate normal public disclosure with a fix or effective mitigation. If active exploitation or another urgent risk requires earlier warning, promptly publish the affected scope and available protective steps while remediation continues. Release notes should identify any assigned CVE or equivalent advisory identifier for fixes. Credit vulnerability reporters when publishing a fix, with their permission and preferred attribution. These are maintenance policies, not claims about historical response times.
 
 ## Supported code
 
@@ -12,7 +12,7 @@ Security fixes are developed on the current default branch and released through 
 
 ## Trust boundaries
 
-Battery measurements and charging permissions affect downstream DVCC decisions. Restrict MQTT publisher ACLs and D-Bus access; reject incomplete or stale telemetry. The service does not replace a physical BMS, fuses or charger protections. MQTT transport may be plaintext on a trusted LAN unless secured by the deployment.
+Battery measurements and charging permissions affect downstream DVCC decisions. Restrict MQTT publisher ACLs and D-Bus access; reject incomplete or stale telemetry. The service does not replace a physical BMS, fuses or charger protections. The MQTT client is plaintext and unauthenticated. Use the [protected local broker profile](docs/secure-local-broker.md); a private LAN address alone does not authenticate publishers.
 
 ## Secure development and delivery
 

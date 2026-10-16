@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Add an opt-in local-only MQTT destination guard and document authenticated producer/broker boundaries.
+- Publish project governance, community reporting contact and assurance roadmap.
+
+### Upgrade
+
+Existing remote MQTT settings continue to work. Arrange a protected local broker before enabling `local_only = true` or `--local-only`.
+
+### Security
+
+The guard prevents accidental remote plaintext connections when selected; it does not authenticate local users or MQTT publishers. No hardware behavior or deployed broker policy is changed.
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

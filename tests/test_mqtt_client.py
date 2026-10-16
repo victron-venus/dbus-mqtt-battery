@@ -431,3 +431,25 @@ def test_incomplete_snapshot_is_skipped_even_when_validity_check_accepts_it():
             setattr(battery, field, original)
         battery._sample_times.clear()
         assert client.get_aggregate_data() is None
+
+
+def test_local_only_pins_localhost_without_dns():
+    client = make_client(broker="localhost", local_only=True)
+    assert client.broker == "127.0.0.1"
+    client.client = MagicMock()
+    assert client.connect() is True
+    client.client.connect.assert_called_once_with("127.0.0.1", 1883, keepalive=60)
+
+
+def test_local_only_direct_client_rejects_remote_before_mqtt_initialization():
+    import pytest
+
+    with patch("dbus_mqtt_battery.mqtt_client.mqtt.Client") as factory:
+        with pytest.raises(ValueError, match="numeric loopback"):
+            make_client(broker="192.168.1.20", local_only=True)
+        factory.assert_not_called()
+
+
+def test_remote_compatibility_mode_remains_explicitly_available():
+    client = make_client(broker="192.168.1.20", local_only=False)
+    assert client.broker == "192.168.1.20"

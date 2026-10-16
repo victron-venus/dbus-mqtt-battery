@@ -16,6 +16,7 @@ from time import monotonic, time
 from typing import Any
 
 from .bms_data import STALE_TIMEOUT, BatteryData
+from .config import local_broker_address
 from .telemetry import decode_batteries, decode_header, merge_partial
 
 logger = logging.getLogger("MqttBattery")
@@ -49,8 +50,9 @@ class MqttBatteryClient:
         cells_per_bms: int = 4,
         temps_per_bms: int = 2,
         telemetry_mode: str = "atomic",
+        local_only: bool = False,
     ) -> None:
-        self.broker = broker
+        self.broker = local_broker_address(broker) if local_only else broker
         self.port = port
         self.battery_count = battery_count
         self.topic_prefix = topic_prefix

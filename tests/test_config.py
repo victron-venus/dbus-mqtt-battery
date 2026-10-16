@@ -155,3 +155,29 @@ def test_invalid_telemetry_mode_is_rejected():
     config = Config(mqtt=MqttConfig(telemetry_mode="fallback-silently"))
     with pytest.raises(ValueError, match="telemetry_mode"):
         config.validate()
+
+
+@pytest.mark.parametrize(
+    "broker", ["192.168.1.10", "mqtt.example.test", "0.0.0.0", "::", "127.0.0.1.evil.test", "127.1"]
+)
+def test_local_only_rejects_non_numeric_or_remote_broker(broker):
+    config = Config(mqtt=MqttConfig(broker=broker, local_only=True))
+    with pytest.raises(ValueError, match="numeric loopback"):
+        config.validate()
+
+
+def test_local_only_file_and_cli(tmp_path):
+    path = tmp_path / "config.ini"
+    path.write_text("[mqtt]\nbroker = 127.0.0.2\nlocal_only = true\n")
+    config = Config.from_file(path)
+    config.validate()
+    assert config.mqtt.local_only is True
+    overridden = merge_config_and_args(
+        Config(), create_argument_parser().parse_args(["--local-only"])
+    )
+    assert overridden.mqtt.local_only is True
+
+
+@pytest.mark.parametrize("broker", ["localhost", "LOCALHOST", "127.0.0.1", "127.0.0.2", "::1"])
+def test_local_only_accepts_loopback(broker):
+    Config(mqtt=MqttConfig(broker=broker, local_only=True)).validate()
