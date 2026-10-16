@@ -35,7 +35,7 @@ functionality needs automated tests, fixed bugs need regressions and interface
 changes need documentation and release notes. Review third-party notices in the
 root and overlay directories before redistributing.
 
-## Achievements and remaining work
+## Roadmap: October 2026–October 2027
 
 [CHANGELOG](../CHANGELOG.md) records released behavior and upgrade impact.
 Atomic telemetry, stable temperature IDs, package verification and the local
@@ -50,3 +50,11 @@ There is no backup maintainer or established one-week recovery arrangement;
 input validation, bit-for-bit independent builds and every-release signing are
 not asserted without evidence. The [official assessment evidence](openssf-evidence.md)
 is a self-assessment of practices, not a safety certification.
+
+During this period, the project will not treat remote plaintext MQTT as an
+authenticated or confidential channel, add battery control features without
+explicit safety review, or claim target-device acceptance from host tests.
+
+The [README](../README.md) links the live OpenSSF badge. Update achievement
+links there within 48 hours of public recognition; the changelog records
+software changes rather than the badge level.
