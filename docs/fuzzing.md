@@ -1,5 +1,9 @@
 # Release-candidate fuzz testing
 
+See the [illustrated RC fuzzing process and verified rollout results](https://github.com/victron-venus/venus-os-ci-toolkit/blob/main/docs/rc-fuzzing-results.md)
+for the shared release flow, evidence requirements and a dated cross-project
+snapshot. The project-specific scope and reproduction guidance below still apply.
+
 ## Scope and assertions
 
 **Atomic battery telemetry decoding.** The target decodes the real schema-1 MQTT frame and constructs a detached battery snapshot. It verifies ready-state completeness, finite measurements, SoC bounds and preservation of measurement time. The package namespace bypasses D-Bus/GI initialization while loading real telemetry and battery-data modules; the monotonic clock is fixed. No broker connection or battery-control action occurs.
