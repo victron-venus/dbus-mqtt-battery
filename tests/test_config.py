@@ -158,7 +158,16 @@ def test_invalid_telemetry_mode_is_rejected():
 
 
 @pytest.mark.parametrize(
-    "broker", ["192.168.1.10", "mqtt.example.test", "0.0.0.0", "::", "127.0.0.1.evil.test", "127.1"]
+    "broker",
+    [
+        "192.168.1.10",
+        "mqtt.example.test",
+        # Deliberately rejected wildcard fixture; no socket is opened.
+        "0.0.0.0",  # nosec B104
+        "::",
+        "127.0.0.1.evil.test",
+        "127.1",
+    ],
 )
 def test_local_only_rejects_non_numeric_or_remote_broker(broker):
     config = Config(mqtt=MqttConfig(broker=broker, local_only=True))
