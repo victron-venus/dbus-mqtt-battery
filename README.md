@@ -1,5 +1,7 @@
 # dbus-mqtt-battery
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15555/badge)](https://www.bestpractices.dev/en/projects/15555)
+
 [![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
 
 [![CI](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml/badge.svg)](https://github.com/victron-venus/dbus-mqtt-battery/actions/workflows/ci.yml)
@@ -11,7 +13,7 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)](https://github.com/victron-venus/dbus-mqtt-battery)
 [![GitHub watchers](https://img.shields.io/github/watchers/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/watchers)
 [![GitHub contributors](https://img.shields.io/github/contributors/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/graphs/contributors)
-[![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venues/dbus-mqtt-battery/issues)
+[![GitHub issues](https://img.shields.io/github/issues/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/issues)
 [![GitHub closed issues](https://img.shields.io/github/issues-closed/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/issues?q=is%3Aissue+is%3Aclosed)
 [![GitHub pull requests](https://img.shields.io/github/issues-pr/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/pulls)
 [![GitHub last commit](https://img.shields.io/github/last-commit/victron-venus/dbus-mqtt-battery)](https://github.com/victron-venus/dbus-mqtt-battery/commits/main)
@@ -331,3 +333,7 @@ and the [OpenSSF evidence index](docs/openssf-evidence.md) for assessment refere
 The target decodes the real schema-1 MQTT frame and constructs a detached battery snapshot. It verifies ready-state completeness, finite measurements, SoC bounds and preservation of measurement time. The package namespace bypasses D-Bus/GI initialization while loading real telemetry and battery-data modules; the monotonic clock is fixed. No broker connection or battery-control action occurs.
 
 [RC-only fuzzing policy, local reproduction and failure handling](docs/fuzzing.md).
+
+## Project practices and secure operation
+
+Use the [protected local broker profile](docs/secure-local-broker.md) and its `--local-only` guard. See [architecture and roadmap](docs/project-assurance.md), [governance](GOVERNANCE.md), [contributing](CONTRIBUTING.md), [conduct](CODE_OF_CONDUCT.md) and [security reporting](SECURITY.md).

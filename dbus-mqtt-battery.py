@@ -931,6 +931,7 @@ def main():
         config.battery.cells_per_bms,
         config.battery.temps_per_bms,
         config.mqtt.telemetry_mode,
+        local_only=config.mqtt.local_only,
     )
     if not mqtt_client.connect():
         logger.warning("Failed to connect to MQTT broker")
