@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## [2.7.10] - 2026-10-17
 
 - Add an opt-in local-only MQTT destination guard and document authenticated producer/broker boundaries.
 - Publish project governance, community reporting contact and assurance roadmap.
