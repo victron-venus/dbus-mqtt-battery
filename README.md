@@ -82,7 +82,9 @@ continues to use SetupHelper; the development Python selection does not change i
 | Cells/BMS | `cellsPerBms` | `4` | Cells per BMS module (4 for 12V LiFePO4) |
 
 **Notes:**
-- Chain services are auto-discovered from ALL battery services on D-Bus (not just `mqtt_chain*`)
+- SetupHelper creates the configured number of MQTT chain services. Each process
+  reads its configured MQTT topic prefix and BMS module IDs; it does not discover
+  other battery services on D-Bus.
 
 **Examples:**
 - 1 chain, 4 batteries: `chains=1`
@@ -152,7 +154,10 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-This downloads the latest version from GitHub and runs `setup install`.
+This downloads the current `main` branch source from GitHub and runs
+`setup install` on the configured SSH host. It does not select a published
+release or deploy the local checkout. Use the release-archive procedure above
+when installing a specific published version.
 
 ## Documentation
 

@@ -1,96 +1,58 @@
-# System Architecture
+# MQTT battery architecture
 
-## Data Flow
-
-```mermaid
-flowchart TB
-    subgraph Chained["JBD BMS Chains"]
-        subgraph Chain1["Chain 1: 4x JBD BMS"]
-            B1["BMS 1"]; B2["BMS 2"]; B3["BMS 3"]; B4["BMS 4"]
-        end
-        subgraph Chain2["Chain 2: 4x JBD BMS"]
-            B5["BMS 5"]; B6["BMS 6"]; B7["BMS 7"]; B8["BMS 8"]
-        end
-    end
-
-    subgraph ESP32["ESP32 BLE Proxies"]
-        E1["ESP32 #1"]; E2["ESP32 #2"]
-    end
-
-    subgraph Venus["Venus OS"]
-        MQTT["MQTT Broker"]
-        DMB1["dbus-mqtt-battery\n(topic: battery)"]
-        DMB2["dbus-mqtt-battery\n(topic: battery2)"]
-        DBUS["D-Bus"]
-        CALC["systemcalc-py"]
-    end
-
-    B1 & B2 & B3 & B4 -->|"BLE"| E1
-    B5 & B6 & B7 & B8 -->|"BLE"| E2
-    E1 -->|"battery/*"| MQTT; E2 -->|"battery2/*"| MQTT
-
-    MQTT --> DMB1 -->|"mqtt_chain1"| DBUS
-    MQTT --> DMB2 -->|"mqtt_chain2"| DBUS
-    DBUS --> CALC
-
-    style DMB1 fill:#4ecdc4,color:#fff
-    style DMB2 fill:#4ecdc4,color:#fff
-    style CALC fill:#f39c12,color:#fff
-```
-
-## Multi-Chain Configuration
+ESP32 firmware reads JBD battery modules and publishes their measurements to
+MQTT. Each configured `dbus-mqtt-battery` process validates and aggregates one
+chain, then publishes a Victron battery service on D-Bus. Venus OS consumers
+read those services; the bridge does not discover or aggregate other D-Bus
+battery services.
 
 ```mermaid
-flowchart TB
-    subgraph ESP["One ESP32 publishing 8 batteries"]
-        MQTT["battery/bms1...bms8"]
-    end
-
-    subgraph Services["Two Dbus Services"]
-        S1["dbus-mqtt-battery\n(bms-first: 1, batteries: 4)"]
-        S2["dbus-mqtt-battery\n(bms-first: 5, batteries: 4)"]
-    end
-
-    MQTT --> S1; MQTT --> S2
-    S1 --> C1["mqtt_chain1"]; S2 --> C2["mqtt_chain2"]
-
-    style S1 fill:#4ecdc4,color:#fff
-    style S2 fill:#4ecdc4,color:#fff
+flowchart LR
+    BMS1["Chain 1 BMS modules"] --> ESP1["ESP32: battery topic prefix"]
+    BMS2["Chain 2 BMS modules"] --> ESP2["ESP32: battery2 topic prefix"]
+    ESP1 --> MQTT["MQTT broker"]
+    ESP2 --> MQTT
+    MQTT --> DRIVER1["dbus-mqtt-chain1"]
+    MQTT --> DRIVER2["dbus-mqtt-chain2"]
+    DRIVER1 --> DBUS1["D-Bus: battery.mqtt_chain1"]
+    DRIVER2 --> DBUS2["D-Bus: battery.mqtt_chain2"]
+    DBUS1 --> GX["Venus OS consumers"]
+    DBUS2 --> GX
 ```
 
-## Runbook: Troubleshooting
+## Chain configuration and freshness
 
-### Package Not Showing in PackageManager
+SetupHelper creates the number of processes declared by `chains`, with
+`batteries` modules and `cellsPerBms` cells per module. Defaults are two chains,
+four modules per chain and four cells per module. Chain 1 uses topic prefix
+`battery`; later chains use `battery2`, `battery3`, and so on. Each publisher
+normally numbers its BMS modules from 1. `bmsFirstN` can select a different first
+module for chain N; the publisher's topic prefix and module IDs must match the
+configured process.
 
-**Actions:**
-```bash
-# Verify version file
-cat /data/dbus-mqtt-battery/version
+New installations use atomic telemetry. Every configured BMS must provide the
+required complete, fresh physical measurements and permissions before the
+chain becomes available. A missing module cannot disappear from aggregation;
+stale or incomplete input disconnects the chain and withholds charging evidence.
+See the [readiness contract](../../README.md#aggregate-telemetry-freshness) and
+[producer protocol](../../README.md#black-start-and-telemetry-readiness)
+before changing a deployed firmware/driver pair.
 
-# Verify setup script
-ls -la /data/dbus-mqtt-battery/setup
+## Troubleshooting
 
-# Restart PackageManager
-svc -t /service/PackageManager
-```
+Check the configured chain's supervisor, log and D-Bus connection status. These
+commands inspect chain 1; substitute the corresponding number for another chain:
 
-### Chain Shows N/A
-
-**Actions:**
-```bash
-# Check ESP32 is publishing
-mosquitto_sub -v -t 'battery/#' -C 5
-
-# Check service is running
+```sh
 svstat /service/dbus-mqtt-chain1
-
-# Verify D-Bus service
-dbus -y com.victronenergy.battery.mqtt_chain1 /Dc/0/Voltage GetValue
+tail -n 50 /var/log/dbus-mqtt-chain1/current
+dbus -y com.victronenergy.battery.mqtt_chain1 /Connected GetValue
 ```
 
----
+A running process alone does not establish fresh battery readings. Check the
+producer's MQTT connection, topic prefix, module IDs and complete telemetry
+when the D-Bus service remains disconnected.
 
-## Related Documentation
-
-- [inverter-control System Architecture](../inverter-control/.github/docs/system-architecture.md)
-- [ADR-003: DVCC for JBD BMS Protection](../inverter-control/.github/docs/adr-001-grid-zero-architecture.md)
+- [Installation and configuration](../../README.md#configuration-options)
+- [Protected local broker profile](../../docs/secure-local-broker.md)
+- [Implementation and assurance](../../docs/project-assurance.md)
