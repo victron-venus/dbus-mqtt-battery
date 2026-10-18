@@ -43,3 +43,4 @@ store, service, and production deployment acceptance remain separate checks.
 - `dbus_mqtt_battery/config.py`
 - `pyproject.toml`
 - `version`
+- `uv.lock` (local `dbus-mqtt-battery` package version only)
