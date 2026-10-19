@@ -10,7 +10,7 @@ dependencies = ["paho-mqtt>=2.1.0"]
 
 [project.optional-dependencies]
 dev = [
-    "types-atheris>=3.1.0.20260630","pytest", "pytest-cov", "ruff>=0.16.10", "mypy>=2.4.0"]
+    "types-atheris>=3.1.0.20260630","pytest", "pytest-cov", "ruff>=0.17.1", "mypy>=2.4.0"]
 test = ["pytest", "pytest-cov"]
 
 [tool.setuptools.packages.find]
