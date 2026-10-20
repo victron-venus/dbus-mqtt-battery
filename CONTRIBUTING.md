@@ -21,6 +21,10 @@ Contributions must be compatible with [LICENSE](LICENSE). Preserve third-party c
 
 Install local test dependencies with `bash scripts/ci.sh --install`, then run `bash scripts/ci.sh`. The script is the authoritative local entry point for the checks and tool versions; inspect it and the checked-in dependency manifests before installing prerequisites. Use an isolated development environment.
 
+The local installer uses the committed `uv.lock` with the `dev` and `test`
+extras and the `build` group, then installs Bandit from its hash-locked
+requirements file. It rejects stale locks instead of resolving newer packages.
+
 For the shared Python checks, use uv 0.12.18 and the checked-in lock without resolving newer packages:
 
 ```bash
