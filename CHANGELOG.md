@@ -13,6 +13,13 @@
 Use the existing upgrade procedure and preserve configuration and data. This
 maintenance release does not change MQTT messages or require a data migration.
 
+### Security
+
+Use an authenticated broker and restrict which producers can publish battery
+telemetry. Keep the documented network restrictions in place; the tooling
+updates do not add authentication to incoming measurements. Existing
+dependency and secret scans remain required before publication.
+
 ## [2.7.11] - 2026-10-18
 
 ### Changed
