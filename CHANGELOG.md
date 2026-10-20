@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.7.12] - Unreleased
+
+### Changed
+
+- Update the locked Ruff toolchain to 0.17.1.
+- Align the local validation installer with the committed dependency lock and hash-locked security tools.
+- Refresh pinned shared CI workflows and the patched Scorecard runtime.
+
+### Upgrade
+
+Use the existing upgrade procedure and preserve configuration and data. This
+maintenance release does not change MQTT messages or require a data migration.
+
 ## [2.7.11] - 2026-10-18
 
 ### Changed
