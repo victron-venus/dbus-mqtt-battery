@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=84.0.0"]
+requires = ["setuptools>=84.1.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -62,4 +62,4 @@ ignore_missing_imports = true
 
 # Install wheel-only build tools before building the local package without build isolation.
 [dependency-groups]
-build = ["build==1.6.1", "setuptools==84.0.0", "wheel==0.48.0"]
+build = ["build==1.6.1", "setuptools==84.1.0", "wheel==0.48.0"]
