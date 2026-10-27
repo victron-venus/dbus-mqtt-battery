@@ -95,7 +95,7 @@ wheels = [
 
 [[package]]
 name = "dbus-mqtt-battery"
-version = "2.7.12"
+version = "2.7.13"
 source = { editable = "." }
 dependencies = [
     { name = "paho-mqtt" },
