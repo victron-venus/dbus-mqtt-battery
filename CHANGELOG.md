@@ -1,5 +1,21 @@
 # Changelog
 
+## [2.7.13] - Unreleased
+
+### Changed
+
+- Update the packaging toolchain to setuptools 84.2.1 and the development linter to Ruff 0.17.2 with matching locked dependencies.
+- Refresh grouped shared CI references and keep RC workflow, runtime, and policy pins aligned.
+- Upload release assets using the verified draft ID and tolerate bounded GitHub metadata propagation delays.
+
+### Upgrade
+
+This maintenance release changes packaging and release tooling. Application logic, the MQTT protocol, and the paho-mqtt runtime dependency remain unchanged. Preserve an accepted package for rollback.
+
+### Security
+
+The setuptools build requirement is now 84.2.1. This is a build-tool dependency update, not a change to runtime authentication or transport. Continue restricting broker access to trusted producers.
+
 ## [2.7.12] - Unreleased
 
 ### Changed
