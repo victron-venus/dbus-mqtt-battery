@@ -1,0 +1,31 @@
+#include "components/series_telemetry.h"
+#include "json_shim.hpp"
+#include <iostream>
+
+uint32_t millis() { return 1100; }
+
+int main() {
+  using namespace series_telemetry;
+  auto &collector = snapshot();
+  if (!collector.configure({@COUNTS@})) return 2;
+  collector.begin_session(0x12345678, 0xabcdef01);
+  for (unsigned member = 0; member < collector.member_count(); ++member) {
+    collector.begin_sample(member);
+    collector.record(member, VOLTAGE, 3.3f * collector.cell_count(member), 1000);
+    collector.record(member, CURRENT, 5.0f + member, 1000);
+    collector.record(member, SOC, 80.0f - 10.0f * member, 1000);
+    collector.record(member, TEMPERATURE, 25.0f + member, 1000);
+    collector.record(member, STATUS, 3, 1000);
+    collector.record(member, CAPACITY, 70.0f - member, 1000);
+    collector.record(member, CYCLES, 100 + member, 1000);
+    collector.record(member, CELL_COUNT, collector.cell_count(member), 1000);
+    for (unsigned cell = 0; cell < collector.cell_count(member); ++cell)
+      collector.record(member, cell_field(cell), 3.3f, 1000);
+    collector.end_sample(member);
+  }
+  JsonObject root;
+  // Exact payload lambda returned by generate-series-config.py follows.
+  @PAYLOAD@
+  write_json(std::cout, *root.node);
+  std::cout << '\n';
+}

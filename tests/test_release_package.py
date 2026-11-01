@@ -1,6 +1,7 @@
 """Validate the shipped archive rather than importing the source checkout."""
 
 import hashlib
+import json
 
 # Reviewed test harness: fixed commands and isolated fixture paths; no shell interpolation.
 import subprocess  # nosec B404
@@ -63,3 +64,35 @@ def test_release_tag_must_match_version(tmp_path):
     """Reject accidental publication under a different version tag."""
     with pytest.raises(ValueError, match="committed version"):
         build_archive(ROOT, "v0.0.0", tmp_path)
+
+
+def test_archive_can_preflight_topology_without_device_libraries_or_checkout(tmp_path):
+    """Ship the full opt-in runtime and run its standalone preflight in isolation."""
+    archive = build_archive(ROOT, TAG, tmp_path)
+    with tarfile.open(archive) as package:
+        names = set(package.getnames())
+        required = {
+            "dbus-mqtt-battery/dvcc.py",
+            "dbus-mqtt-battery/dbus_mqtt_battery/topology.py",
+            "dbus-mqtt-battery/dbus_mqtt_battery/telemetry_v2.py",
+            "dbus-mqtt-battery/dbus_mqtt_battery/topology_install.py",
+        }
+        assert required <= names
+        assert not any("/tests/" in name or "/examples/" in name for name in names)
+        package.extractall(tmp_path / "extracted", filter="data")
+    manifest = tmp_path / "operator-topology.json"
+    manifest.write_bytes((ROOT / "examples/topology-16s-offline.json").read_bytes())
+    installer = tmp_path / "extracted/dbus-mqtt-battery/dbus_mqtt_battery/topology_install.py"
+    # Fixed local extracted script and synthetic operator configuration; no shell.
+    result = subprocess.run(  # nosec B603
+        [sys.executable, "-I", str(installer), str(manifest)],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    plan = json.loads(result.stdout)
+    assert plan["live_identities_checked"] is False
+    assert plan["services"][0]["member_cells"] == [16]
+    assert plan["services"][0]["output"] == "offline"

@@ -1,0 +1,41 @@
+{
+  "config_version": 1,
+  "reserved_device_instances": [
+    512,
+    513,
+    514
+  ],
+  "chains": [
+    {
+      "id": "mixed",
+      "connection": "series",
+      "source": {
+        "topic_prefix": "mixed-series",
+        "telemetry_schema": 2
+      },
+      "members": [
+        {
+          "bms_id": 1,
+          "cells": 4
+        },
+        {
+          "bms_id": 2,
+          "cells": 8
+        },
+        {
+          "bms_id": 3,
+          "cells": 4
+        }
+      ],
+      "service_suffix": "mqtt_mixed",
+      "device_instance": 551,
+      "aggregation": {
+        "current": "voltage_weighted_bms_estimate",
+        "soc": "minimum_member",
+        "remaining_capacity": "minimum_remaining_ah"
+      },
+      "output": "offline",
+      "protection_profile": null
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "config_version": 1,
+  "reserved_device_instances": [
+    512,
+    513,
+    514
+  ],
+  "chains": [
+    {
+      "id": "house16",
+      "connection": "series",
+      "source": {
+        "topic_prefix": "house-16s",
+        "telemetry_schema": 2
+      },
+      "members": [
+        {
+          "bms_id": 1,
+          "cells": 16,
+          "temperatures": 1
+        }
+      ],
+      "service_suffix": "mqtt_house16",
+      "device_instance": 550,
+      "product_name": "House 16-cell battery",
+      "aggregation": {
+        "current": "voltage_weighted_bms_estimate",
+        "soc": "minimum_member",
+        "remaining_capacity": "minimum_remaining_ah"
+      },
+      "output": "offline",
+      "protection_profile": null
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "compiler_flags": [
+    "-std=c++17",
+    "-O1",
+    "-fsanitize=address,undefined",
+    "-fno-omit-frame-pointer"
+  ],
+  "frames_sha256": "a91041e63ed5324be2c58c3d915db4132fb265220d0a90a74e59d4237d5b680f",
+  "method": "Compile real collector and generated publication lambda using host JSON adapter",
+  "producer_commit": "d496941366279b7eb93d72956bdb715d51745935",
+  "producer_repository": "https://github.com/victron-venus/esphome-jbd-bms-mqtt",
+  "producer_source_sha256": {
+    "components/series_telemetry.h": "a6dbe3ac0913d74f285c3bdbacb02a956d5adc574c7f7181368ae51ef04c5b4f",
+    "jbd-all-batteries1.yaml": "76a135d19121b356a75706a276c9c26a3d9f029b68b4732137877f45b8040f01",
+    "packages/mqtt-availability.yaml": "46598a9e751b8174c3e16b48d7a8df9680a7b39be98bf18f902ae0a4c0c46480",
+    "scripts/generate-series-config.py": "81eeb3767bf6f61910cde62b21735e01b1dbd381255ea0db18ce402f8581f0ee"
+  },
+  "publication_lambda_sha256": {
+    "16": "a5fb4ecf64f11a7f5413543e051d35c541996aa8b5f8ae3a320ca5aba11ae1f3",
+    "32-32-32-32": "a5fb4ecf64f11a7f5413543e051d35c541996aa8b5f8ae3a320ca5aba11ae1f3",
+    "4-4-4-4": "a5fb4ecf64f11a7f5413543e051d35c541996aa8b5f8ae3a320ca5aba11ae1f3",
+    "4-8-4": "a5fb4ecf64f11a7f5413543e051d35c541996aa8b5f8ae3a320ca5aba11ae1f3"
+  },
+  "scope": "Native synthetic observations; no BLE, MQTT transport, ArduinoJson formatting or hardware qualification"
+}
