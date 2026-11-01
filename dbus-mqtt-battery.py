@@ -25,6 +25,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -155,10 +156,40 @@ class DbusAggregateService:
         self.device_instance = device_instance
         self.product_name = product_name
         self.config = config if config is not None else Config()
+        if mqtt_client.topology and mqtt_client.topology.output != "managed":
+            raise ValueError("offline topology cannot register a D-Bus battery service")
+        if mqtt_client.topology:
+            from dataclasses import replace
+
+            profile = mqtt_client.topology.protection_profile
+            if profile is None:
+                raise ValueError("managed topology requires an explicit protection profile")
+            self.config = replace(
+                self.config,
+                battery=replace(
+                    self.config.battery,
+                    alarm_low_cell_critical=profile.discharge_cell_cutoff,
+                    alarm_low_cell_voltage=profile.discharge_cell_start_limit,
+                    alarm_high_cell_critical=profile.cell_cutoff,
+                    alarm_high_cell_voltage=profile.cell_near_full,
+                    alarm_cell_imbalance=profile.imbalance_aggressive,
+                    alarm_low_temp=profile.temp_full_current_min,
+                    alarm_low_temp_critical=profile.temp_stop_charge,
+                    alarm_high_temp=profile.temp_full_current_max,
+                    alarm_high_temp_critical=profile.temp_stop_charge_high,
+                ),
+            )
 
         # Initialize DVCC controller for dynamic current limiting
-        total_cells = mqtt_client.battery_count * mqtt_client.cells_per_bms
-        self.dvcc = DvccController(total_cells, mqtt_client.battery_count)
+        total_cells = mqtt_client.total_cells
+        self.dvcc = DvccController(
+            total_cells,
+            mqtt_client.battery_count,
+            profile=mqtt_client.topology.protection_profile if mqtt_client.topology else None,
+        )
+        self._control_profile = (
+            mqtt_client.topology.protection_profile if mqtt_client.topology else None
+        )
         self.dvcc_log_interval = 30  # Log DVCC status every N seconds
         self.last_dvcc_log = 0.0
         self._soc_alarm_log_state: int | None = None
@@ -179,9 +210,18 @@ class DbusAggregateService:
         logger.info(
             "DVCC enabled: %d cells, CVL=%.1fV, CCL max=%sA, DCL max=%sA",
             total_cells,
-            DVCC_CELL_MAX_VOLTAGE * total_cells,
-            DVCC_MAX_CHARGE_CURRENT,
-            DVCC_MAX_DISCHARGE_CURRENT,
+            (
+                self._control_profile.cell_max_voltage
+                if self._control_profile
+                else DVCC_CELL_MAX_VOLTAGE
+            )
+            * total_cells,
+            self._control_profile.max_charge_current
+            if self._control_profile
+            else DVCC_MAX_CHARGE_CURRENT,
+            self._control_profile.max_discharge_current
+            if self._control_profile
+            else DVCC_MAX_DISCHARGE_CURRENT,
         )
 
     def _setup_paths(self):
@@ -229,7 +269,7 @@ class DbusAggregateService:
             "/System/BatteriesSeries", self.mqtt.battery_count, writeable=True
         )
         self._dbusservice.add_path(
-            "/System/NrOfCellsPerBattery", self.mqtt.cells_per_bms, writeable=True
+            "/System/NrOfCellsPerBattery", self.mqtt.uniform_cells_per_bms, writeable=True
         )
 
         # Cell voltages (GUI v2)
@@ -262,7 +302,7 @@ class DbusAggregateService:
 
         # Individual cell voltages for GUI v2
         # Total cells = battery_count × cells_per_battery
-        total_cells = self.mqtt.battery_count * self.mqtt.cells_per_bms
+        total_cells = self.mqtt.total_cells
 
         # Add /System/NrOfCells - required for GUI v2 to know how many cells to display
         self._dbusservice.add_path("/System/NrOfCells", total_cells, writeable=True)
@@ -291,10 +331,20 @@ class DbusAggregateService:
         # Temperature sensors (dbus-serialbattery format)
         # Temperature1..4 = individual battery temperatures
         # Note: /Dc/0/Temperature is already added above
-        for i in range(1, 5):  # Temperature1..Temperature4
+        temperature_slots = self.mqtt.battery_count if self.mqtt.topology else 4
+        for i in range(1, temperature_slots + 1):
             self._dbusservice.add_path(f"/System/Temperature{i}", None, writeable=True)
             self._dbusservice.add_path(f"/System/Temperature{i}Name", f"BMS {i}", writeable=True)
         self._dbusservice.add_path("/System/MOSTemperature", None, writeable=True)
+        if self.mqtt.topology:
+            self._dbusservice.add_path("/Info/TopologyId", self.mqtt.topology.id)
+            self._dbusservice.add_path("/Info/TelemetrySchema", self.mqtt.topology.telemetry_schema)
+            for slot, member in enumerate(self.mqtt.topology.members, 1):
+                self._dbusservice.add_path(f"/Members/{slot}/BmsId", member.bms_id)
+                self._dbusservice.add_path(f"/Members/{slot}/CellCount", member.cells)
+                self._dbusservice.add_path(
+                    f"/Members/{slot}/CellOffset", self.mqtt.topology.cell_offsets[slot - 1]
+                )
 
         # Min/Max temperature with IDs
         self._dbusservice.add_path("/System/MinCellTemperature", None, writeable=True)
@@ -435,7 +485,7 @@ class DbusAggregateService:
             DBUS_VOLTAGE_DIFF_PATH,
         ):
             self._dbusservice[path] = None
-        for index in range(self.mqtt.battery_count * self.mqtt.cells_per_bms):
+        for index in range(self.mqtt.total_cells):
             self._dbusservice[f"/Cell/{index}/Voltage"] = None
             self._dbusservice[f"/Voltages/Cell{index + 1}"] = None
 
@@ -478,14 +528,16 @@ class DbusAggregateService:
 
         # State of charge
         self._dbusservice["/Soc"] = round(data["soc"], 1)
-        self._dbusservice[DBUS_CAPACITY_PATH] = round(data["capacity"], 1)
+        self._dbusservice[DBUS_CAPACITY_PATH] = (
+            round(data["capacity"], 1) if data["capacity"] is not None else None
+        )
         if data.get("capacity_full") and data["capacity_full"] > 0:
             self._dbusservice["/InstalledCapacity"] = round(data["capacity_full"], 0)
 
         self._update_time_to_go(data)
 
         # Cell voltages with IDs
-        self._dbusservice["/System/NrOfCellsPerBattery"] = self.mqtt.cells_per_bms
+        self._dbusservice["/System/NrOfCellsPerBattery"] = self.mqtt.uniform_cells_per_bms
         self._update_cell_voltages(data)
 
         # Per-battery temperatures plus min/max with IDs
@@ -542,9 +594,12 @@ class DbusAggregateService:
         current = data["current"]
         capacity = data["capacity"]
         capacity_full = data.get("capacity_full", 0)
+        if capacity is None:
+            self._dbusservice[PATH_TIME_TO_GO] = None
+            return
 
         # Sanity check: capacity_full should be reasonable (< 10x remaining capacity)
-        if capacity_full > capacity * 10 or capacity_full < capacity:
+        if not self.mqtt.topology and (capacity_full > capacity * 10 or capacity_full < capacity):
             capacity_full = capacity * 100 / max(10, data["soc"])
 
         if current < -0.5 and capacity > 0:
@@ -577,7 +632,7 @@ class DbusAggregateService:
 
         # Update individual cell voltages for GUI v2
         all_cells = data.get("all_cells", [])
-        total_cells = self.mqtt.battery_count * self.mqtt.cells_per_bms
+        total_cells = self.mqtt.total_cells
 
         # Update /System/NrOfCells
         self._dbusservice["/System/NrOfCells"] = total_cells
@@ -687,7 +742,12 @@ class DbusAggregateService:
         if min_cell is None or max_cell is None:
             return
         diff = max_cell - min_cell
-        if diff >= self.config.battery.alarm_cell_imbalance * 2:
+        critical = (
+            self._control_profile.imbalance_critical
+            if self._control_profile
+            else self.config.battery.alarm_cell_imbalance * 2
+        )
+        if diff >= critical:
             self._dbusservice[ALARM_PATH_CELL_IMBALANCE] = 2
             logger.warning("ALARM: High Cell Imbalance (%.3fV)", diff)
         elif diff >= self.config.battery.alarm_cell_imbalance:
@@ -748,6 +808,25 @@ class DbusAggregateService:
             return
 
         cell_count = data.get("cell_count", 16)
+        if self.mqtt.topology:
+            profile = self.mqtt.topology.protection_profile
+            if profile is None:
+                raise ValueError("managed topology requires an explicit protection profile")
+            self._dbusservice[ALARM_PATH_LOW_VOLTAGE] = (
+                2
+                if voltage <= cell_count * profile.discharge_cell_cutoff
+                else 1
+                if voltage <= cell_count * profile.discharge_cell_start_limit
+                else 0
+            )
+            self._dbusservice[ALARM_PATH_HIGH_VOLTAGE] = (
+                2
+                if voltage >= cell_count * profile.cell_cutoff
+                else 1
+                if voltage >= cell_count * profile.cell_near_full
+                else 0
+            )
+            return
         expected_nominal = cell_count * 3.2  # LiFePO4 nominal
         expected_min = cell_count * 2.8
         expected_max = cell_count * 3.65
@@ -818,10 +897,15 @@ class DbusAggregateService:
         # Log DVCC status periodically or on significant changes
         now = time()
         should_log = False
-        is_limiting = ccl < DVCC_MAX_CHARGE_CURRENT * 0.9
+        maximum = (
+            self._control_profile.max_charge_current
+            if self._control_profile
+            else DVCC_MAX_CHARGE_CURRENT
+        )
+        is_limiting = ccl < maximum * 0.9
 
         # Log when heavily limited; otherwise periodic (interval, or 4x interval when not limiting)
-        if ccl < DVCC_MAX_CHARGE_CURRENT * 0.5:
+        if ccl < maximum * 0.5:
             should_log = True
         else:
             log_interval = self.dvcc_log_interval if is_limiting else self.dvcc_log_interval * 4
@@ -840,7 +924,12 @@ class DbusAggregateService:
             )
 
         # If CCL is critically low, log warning with cell info
-        if ccl <= DVCC_MIN_CHARGE_CURRENT and ccl_reason not in (
+        minimum = (
+            self._control_profile.min_charge_current
+            if self._control_profile
+            else DVCC_MIN_CHARGE_CURRENT
+        )
+        if ccl <= minimum and ccl_reason not in (
             "normal",
             "soc_ok",
             "temp_ok",
@@ -872,7 +961,12 @@ class DbusAggregateService:
             else ""
         )
 
-        if ccl < DVCC_MAX_CHARGE_CURRENT * 0.5:
+        maximum = (
+            self._control_profile.max_charge_current
+            if self._control_profile
+            else DVCC_MAX_CHARGE_CURRENT
+        )
+        if ccl < maximum * 0.5:
             logger.info(
                 "DVCC limiting current to %.1fA because of %s%s",
                 ccl,
@@ -900,6 +994,13 @@ class DbusAggregateService:
 def main():
     """Main entry point for MQTT battery D-Bus service."""
     config, _args = load_config()
+    if _args.validate_topology:
+        from dataclasses import asdict
+
+        print(json.dumps(asdict(config.topology), indent=2, allow_nan=False))
+        return
+    if config.topology and config.topology.output == "offline" and not _args.observe_seconds:
+        raise SystemExit("offline topology requires --observe-seconds; no D-Bus service registered")
 
     logger.info("=== dbus-mqtt-battery v%s ===", VERSION)
     logger.info("MQTT Broker: %s:%s", config.mqtt.broker, config.mqtt.port)
@@ -912,13 +1013,14 @@ def main():
     logger.info("D-Bus service: com.victronenergy.battery.%s", config.dbus.service_suffix)
 
     # Setup D-Bus main loop
-    mainloop = setup_main_loop()
+    mainloop = setup_main_loop() if not _args.observe_seconds else None
 
     # Variables for cleanup
     mqtt_client = None
 
     # Register signal handlers
-    register_signal_handlers(mainloop)
+    if mainloop is not None:
+        register_signal_handlers(mainloop)
 
     # Create MQTT client
     mqtt_client = MqttBatteryClient(
@@ -932,10 +1034,22 @@ def main():
         config.battery.temps_per_bms,
         config.mqtt.telemetry_mode,
         local_only=config.mqtt.local_only,
+        topology=config.topology,
     )
     if not mqtt_client.connect():
         logger.warning("Failed to connect to MQTT broker")
         sys.exit(1)
+    if _args.observe_seconds:
+        from dbus_mqtt_battery.observe import observe
+
+        try:
+            report = observe(mqtt_client, _args.observe_seconds)
+            print(json.dumps(report, indent=2, allow_nan=False))
+        finally:
+            mqtt_client.disconnect()
+        if not report["complete_samples"]:
+            raise SystemExit(2)
+        return
 
     # Wait for initial data
     logger.info("Waiting for MQTT data...")

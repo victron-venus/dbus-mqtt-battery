@@ -2,6 +2,12 @@
 
 ## [2.7.13] - Unreleased
 
+### Added
+
+- Add opt-in explicit series inventories and strict schema-2 telemetry validation, with stable per-member cell/temperature mappings and offline observation.
+- Support commissioned homogeneous LiFePO4 strings with explicit protection profiles, member current ratings and an equipment-voltage ceiling; retain mixed inventories as observation-only.
+- Add topology installation preflight, identity collision checks, supervised-state preservation, explicit retirement and [configuration/rollback documentation](docs/flexible-topology.md).
+
 ### Changed
 
 - Update the packaging toolchain to setuptools 84.2.1 and the development linter to Ruff 0.17.2 with matching locked dependencies.
@@ -10,7 +16,11 @@
 
 ### Upgrade
 
-This maintenance release changes packaging and release tooling. Application logic, the MQTT protocol, and the paho-mqtt runtime dependency remain unchanged. Preserve an accepted package for rollback.
+Existing configurations keep their original decoder, aggregation and control path;
+no topology migration is automatic. New topology mode requires a separate explicit
+manifest and commissioning. Preserve an accepted package and exact configuration
+for rollback; schema-2 producers also need a compatible producer/configuration
+rollback. The paho-mqtt runtime dependency remains unchanged.
 
 ### Security
 
