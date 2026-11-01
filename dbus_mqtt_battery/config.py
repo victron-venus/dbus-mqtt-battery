@@ -39,7 +39,7 @@ if TYPE_CHECKING:
     from .topology import ChainTopology
 
 # Version
-VERSION = "2.7.13"
+VERSION = "2.8.0"
 
 # Default values
 DEFAULT_MQTT_BROKER = "localhost"
