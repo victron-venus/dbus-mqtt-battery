@@ -55,6 +55,20 @@ Each configured series BMS must supply fresh voltage, current, SoC, all configur
 
 At startup the chain reports disconnected with unknown readings and zero permissions/current limits until a complete physical frame arrives. A brief missing poll can use previously measured fields only until their original expiry. Invalid observed values and expired required fields fail closed; a missing series module cannot disappear from the safety calculation. See the readiness contract below.
 
+## Optional explicit series topologies
+
+An opt-in topology manifest describes 1–4 physical batteries per collector, each
+with 1–32 configured cells, and enables strict schema-2 decoding. Existing
+configurations retain their original schema-1 behavior. New topology mode provides
+stable cell mapping, explicit aggregation policies, offline observation and complete
+LiFePO4 protection profiles for commissioned managed output. Mixed cell inventories
+are observation-only in this release; multi-collector strings and parallel-bank
+control are separate extensions.
+
+See [configuration, installation preflight, rollback and troubleshooting](docs/flexible-topology.md)
+before selecting a topology file. Supporting a cell inventory does not establish
+hardware, chemistry or charging compatibility.
+
 ## Local development
 
 ```sh
@@ -80,6 +94,7 @@ continues to use SetupHelper; the development Python selection does not change i
 | Chains | `chains` | `2` | Number of battery chains (1-10) |
 | Batteries | `batteries` | `4` | Batteries per chain |
 | Cells/BMS | `cellsPerBms` | `4` | Cells per BMS module (4 for 12V LiFePO4) |
+| Explicit topology | `topologyFile` | Unset | Optional absolute JSON-manifest path; see [topology setup](docs/flexible-topology.md) |
 
 **Notes:**
 - SetupHelper creates the configured number of MQTT chain services. Each process

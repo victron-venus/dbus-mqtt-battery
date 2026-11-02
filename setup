@@ -117,6 +117,9 @@ ensureRcLocalPersistence() {
 #!/bin/sh
 for service in /data/dbus-mqtt-battery/service/dbus-mqtt-chain*; do
     [ -x "$service/run" ] || continue
+    case "${service##*/}" in
+        dbus-mqtt-chain-*) [ -f "$service/.topology-ready" ] || continue ;;
+    esac
     ln -sfn "$service" "/service/${service##*/}"
 done
 EOF
@@ -145,13 +148,21 @@ PYBOOT
 # $scriptAction (CHECK exits early; INSTALL/UNINSTALL fall through to here).
 case "$scriptAction" in
     INSTALL)
-        readConfig
-        createChainServices
+        if [ -e "$setupOptionsDir/topologyFile" ] || [ -L "$setupOptionsDir/topologyFile" ]; then
+            topologyFile=$(cat "$setupOptionsDir/topologyFile")
+            python3 /data/dbus-mqtt-battery/dbus_mqtt_battery/topology_install.py "$topologyFile" --apply || exit 1
+        else
+            readConfig
+            createChainServices
+        fi
         ensureRcLocalPersistence
         echo "  svstat /service/dbus-mqtt-chain*"
         endScript
         ;;
     UNINSTALL)
+        if [ -e /data/dbus-mqtt-battery/topology-services.json ] || [ -L /data/dbus-mqtt-battery/topology-services.json ]; then
+            python3 /data/dbus-mqtt-battery/dbus_mqtt_battery/topology_install.py --check-uninstall || exit 1
+        fi
         echo "Removing dbus-mqtt-battery services..."
         for ((i=1; i<=10; i++)); do
             serviceName="dbus-mqtt-chain${i}"

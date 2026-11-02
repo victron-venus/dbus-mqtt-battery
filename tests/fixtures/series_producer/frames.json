@@ -1,0 +1,534 @@
+[
+  {
+    "frame": {
+      "batteries": [
+        {
+          "age_ms": 100,
+          "capacity": 70,
+          "cell_count": 16,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 5,
+          "cycles": 100,
+          "discharging": true,
+          "id": 1,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 16,
+          "required_mask": 8387071,
+          "seen_mask": 8387071,
+          "soc": 80,
+          "temperature": 25,
+          "temperatures": [
+            25
+          ],
+          "valid_mask": 8387071,
+          "voltage": 52.7999992
+        }
+      ],
+      "boot_id": "12345678abcdef01",
+      "ready": true,
+      "schema": 2,
+      "seq": 1,
+      "valid_mask": 1
+    },
+    "member_cell_counts": [
+      16
+    ],
+    "name": "16"
+  },
+  {
+    "frame": {
+      "batteries": [
+        {
+          "age_ms": 100,
+          "capacity": 70,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 5,
+          "cycles": 100,
+          "discharging": true,
+          "id": 1,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 80,
+          "temperature": 25,
+          "temperatures": [
+            25
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 69,
+          "cell_count": 8,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 6,
+          "cycles": 101,
+          "discharging": true,
+          "id": 2,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 8,
+          "required_mask": 31231,
+          "seen_mask": 31231,
+          "soc": 70,
+          "temperature": 26,
+          "temperatures": [
+            26
+          ],
+          "valid_mask": 31231,
+          "voltage": 26.3999996
+        },
+        {
+          "age_ms": 100,
+          "capacity": 68,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 7,
+          "cycles": 102,
+          "discharging": true,
+          "id": 3,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 60,
+          "temperature": 27,
+          "temperatures": [
+            27
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        }
+      ],
+      "boot_id": "12345678abcdef01",
+      "ready": true,
+      "schema": 2,
+      "seq": 1,
+      "valid_mask": 7
+    },
+    "member_cell_counts": [
+      4,
+      8,
+      4
+    ],
+    "name": "4-8-4"
+  },
+  {
+    "frame": {
+      "batteries": [
+        {
+          "age_ms": 100,
+          "capacity": 70,
+          "cell_count": 32,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 5,
+          "cycles": 100,
+          "discharging": true,
+          "id": 1,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 32,
+          "required_mask": 549755812351,
+          "seen_mask": 549755812351,
+          "soc": 80,
+          "temperature": 25,
+          "temperatures": [
+            25
+          ],
+          "valid_mask": 549755812351,
+          "voltage": 105.599998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 69,
+          "cell_count": 32,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 6,
+          "cycles": 101,
+          "discharging": true,
+          "id": 2,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 32,
+          "required_mask": 549755812351,
+          "seen_mask": 549755812351,
+          "soc": 70,
+          "temperature": 26,
+          "temperatures": [
+            26
+          ],
+          "valid_mask": 549755812351,
+          "voltage": 105.599998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 68,
+          "cell_count": 32,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 7,
+          "cycles": 102,
+          "discharging": true,
+          "id": 3,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 32,
+          "required_mask": 549755812351,
+          "seen_mask": 549755812351,
+          "soc": 60,
+          "temperature": 27,
+          "temperatures": [
+            27
+          ],
+          "valid_mask": 549755812351,
+          "voltage": 105.599998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 67,
+          "cell_count": 32,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 8,
+          "cycles": 103,
+          "discharging": true,
+          "id": 4,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 32,
+          "required_mask": 549755812351,
+          "seen_mask": 549755812351,
+          "soc": 50,
+          "temperature": 28,
+          "temperatures": [
+            28
+          ],
+          "valid_mask": 549755812351,
+          "voltage": 105.599998
+        }
+      ],
+      "boot_id": "12345678abcdef01",
+      "ready": true,
+      "schema": 2,
+      "seq": 1,
+      "valid_mask": 15
+    },
+    "member_cell_counts": [
+      32,
+      32,
+      32,
+      32
+    ],
+    "name": "32-32-32-32"
+  },
+  {
+    "frame": {
+      "batteries": [
+        {
+          "age_ms": 100,
+          "capacity": 70,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 5,
+          "cycles": 100,
+          "discharging": true,
+          "id": 1,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 80,
+          "temperature": 25,
+          "temperatures": [
+            25
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 69,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 6,
+          "cycles": 101,
+          "discharging": true,
+          "id": 2,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 70,
+          "temperature": 26,
+          "temperatures": [
+            26
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 68,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 7,
+          "cycles": 102,
+          "discharging": true,
+          "id": 3,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 60,
+          "temperature": 27,
+          "temperatures": [
+            27
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        },
+        {
+          "age_ms": 100,
+          "capacity": 67,
+          "cell_count": 4,
+          "cells": [
+            3.29999995,
+            3.29999995,
+            3.29999995,
+            3.29999995
+          ],
+          "charging": true,
+          "current": 8,
+          "cycles": 103,
+          "discharging": true,
+          "id": 4,
+          "observed_age_ms": 100,
+          "online": true,
+          "reported_cell_count": 4,
+          "required_mask": 511,
+          "seen_mask": 511,
+          "soc": 50,
+          "temperature": 28,
+          "temperatures": [
+            28
+          ],
+          "valid_mask": 511,
+          "voltage": 13.1999998
+        }
+      ],
+      "boot_id": "12345678abcdef01",
+      "ready": true,
+      "schema": 1,
+      "seq": 1,
+      "valid_mask": 15
+    },
+    "member_cell_counts": [
+      4,
+      4,
+      4,
+      4
+    ],
+    "name": "4-4-4-4"
+  }
+]

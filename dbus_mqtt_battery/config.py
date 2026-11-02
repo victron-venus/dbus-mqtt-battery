@@ -33,9 +33,13 @@ import ipaddress
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .topology import ChainTopology
 
 # Version
-VERSION = "2.7.13"
+VERSION = "2.8.0"
 
 # Default values
 DEFAULT_MQTT_BROKER = "localhost"
@@ -123,10 +127,10 @@ class BatteryConfig:
     alarm_high_cell_voltage: float = DEFAULT_ALARM_HIGH_CELL_VOLTAGE
     alarm_high_cell_critical: float = DEFAULT_ALARM_HIGH_CELL_CRITICAL
     alarm_cell_imbalance: float = DEFAULT_ALARM_CELL_IMBALANCE
-    alarm_high_temp: int = DEFAULT_ALARM_HIGH_TEMP
-    alarm_high_temp_critical: int = DEFAULT_ALARM_HIGH_TEMP_CRITICAL
-    alarm_low_temp: int = DEFAULT_ALARM_LOW_TEMP
-    alarm_low_temp_critical: int = DEFAULT_ALARM_LOW_TEMP_CRITICAL
+    alarm_high_temp: float = DEFAULT_ALARM_HIGH_TEMP
+    alarm_high_temp_critical: float = DEFAULT_ALARM_HIGH_TEMP_CRITICAL
+    alarm_low_temp: float = DEFAULT_ALARM_LOW_TEMP
+    alarm_low_temp_critical: float = DEFAULT_ALARM_LOW_TEMP_CRITICAL
 
 
 @dataclass
@@ -145,6 +149,7 @@ class Config:
     mqtt: MqttConfig = field(default_factory=MqttConfig)
     battery: BatteryConfig = field(default_factory=BatteryConfig)
     dbus: DbusConfig = field(default_factory=DbusConfig)
+    topology: ChainTopology | None = None
 
     def validate(self) -> None:
         """Raise ValueError for configuration that cannot export safe temperature IDs."""
@@ -244,6 +249,17 @@ def create_argument_parser() -> argparse.ArgumentParser:
         "-c",
         type=str,
         help="Path to config file (INI format). CLI args override file values.",
+    )
+    parser.add_argument("--topology", help="Explicit versioned topology manifest")
+    parser.add_argument("--chain", help="Chain ID selected from the topology manifest")
+    parser.add_argument(
+        "--validate-topology", action="store_true", help="Validate and exit without connecting"
+    )
+    parser.add_argument(
+        "--observe-seconds",
+        type=int,
+        default=0,
+        help="Read MQTT and print diagnostics without registering a D-Bus service",
     )
 
     # MQTT settings
@@ -477,6 +493,53 @@ def load_config() -> tuple[Config, argparse.Namespace]:
     """
     parser = create_argument_parser()
     args = parser.parse_args()
+
+    if args.observe_seconds < 0 or args.observe_seconds > 3600:
+        parser.error("--observe-seconds must be between 0 and 3600")
+    if (args.chain or args.validate_topology) and not args.topology:
+        parser.error("--chain and --validate-topology require --topology")
+    if args.topology:
+        from .topology import load_topology  # optional capability; old path is unchanged
+
+        conflicts = {
+            "battery_count",
+            "capacity",
+            "cells_per_bms",
+            "temps_per_bms",
+            "bms_first",
+            "topic_prefix",
+            "telemetry_mode",
+            "instance",
+            "service_suffix",
+            "product_name",
+        }
+        conflicts.update(name for name in vars(args) if name.startswith("alarm_"))
+        if conflicts.intersection(vars(args)):
+            parser.error(
+                "topology cannot be combined with legacy inventory, identity or alarm overrides"
+            )
+        # A new manifest is self-contained. Only an explicitly chosen transport
+        # INI is read; ambient legacy battery settings cannot leak into it.
+        config = Config.from_file(args.config) if args.config else Config()
+        config.battery, config.dbus = BatteryConfig(), DbusConfig()
+        try:
+            chain = load_topology(args.topology, args.chain)
+        except (OSError, ValueError, TypeError) as error:
+            parser.error(str(error))
+        config.topology = chain
+        config.mqtt.topic_prefix = chain.topic_prefix
+        config.mqtt.telemetry_mode = "atomic"
+        config.battery.count = chain.member_count
+        config.battery.cells_per_bms = chain.members[0].cells
+        config.battery.temps_per_bms = max(member.temperatures for member in chain.members)
+        config.battery.bms_first = chain.members[0].bms_id
+        config.battery.capacity = chain.installed_capacity or 0.0
+        config.dbus.instance = chain.device_instance
+        config.dbus.service_suffix = chain.service_suffix
+        config.dbus.product_name = chain.product_name
+        _merge_mqtt_args(config, args)
+        config.validate()
+        return config, args
 
     # Load from config file if specified
     if hasattr(args, "config") and args.config:

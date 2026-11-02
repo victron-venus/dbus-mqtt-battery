@@ -13,11 +13,14 @@ import os
 import re
 from threading import RLock
 from time import monotonic, time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .bms_data import STALE_TIMEOUT, BatteryData
 from .config import local_broker_address
 from .telemetry import decode_batteries, decode_header, merge_partial
+
+if TYPE_CHECKING:
+    from .topology import ChainTopology
 
 logger = logging.getLogger("MqttBattery")
 MAX_RETIRED_BOOT_IDS = 4096
@@ -51,7 +54,18 @@ class MqttBatteryClient:
         temps_per_bms: int = 2,
         telemetry_mode: str = "atomic",
         local_only: bool = False,
+        topology: ChainTopology | None = None,
     ) -> None:
+        self.topology = topology
+        if topology is not None:
+            battery_count = topology.member_count
+            topic_prefix = topology.topic_prefix
+            installed_capacity = topology.installed_capacity or 0.0
+            bms_first = topology.members[0].bms_id
+            cells_per_bms = topology.members[0].cells
+            temps_per_bms = max(member.temperatures for member in topology.members)
+            if telemetry_mode != "atomic":
+                raise ValueError("explicit topology requires atomic telemetry")
         self.broker = local_broker_address(broker) if local_only else broker
         self.port = port
         self.battery_count = battery_count
@@ -65,9 +79,7 @@ class MqttBatteryClient:
         self.temps_per_bms = max(1, temps_per_bms)
 
         # Create battery data containers (1-indexed for bms1, bms2, etc.)
-        self.batteries: dict[int, BatteryData] = {
-            i: BatteryData(i, cells_per_bms) for i in range(1, battery_count + 1)
-        }
+        self.batteries = self._empty_batteries()
         self._data_lock = RLock()
         if telemetry_mode not in ("atomic", "legacy"):
             raise ValueError("telemetry_mode must be atomic or legacy")
@@ -109,6 +121,26 @@ class MqttBatteryClient:
         self.connected = False
         self._max_reconnect_delay = 60
 
+    @property
+    def total_cells(self) -> int:
+        """Configured inventory, independent of which members are online."""
+        return (
+            self.topology.total_cells if self.topology else self.battery_count * self.cells_per_bms
+        )
+
+    @property
+    def uniform_cells_per_bms(self) -> int | None:
+        if self.topology and len({member.cells for member in self.topology.members}) != 1:
+            return None
+        return self.cells_per_bms
+
+    def _empty_batteries(self) -> dict[int, BatteryData]:
+        if self.topology:
+            return {
+                i: BatteryData(i, member.cells) for i, member in enumerate(self.topology.members, 1)
+            }
+        return {i: BatteryData(i, self.cells_per_bms) for i in range(1, self.battery_count + 1)}
+
     def connect(self) -> bool:
         """Connect to MQTT broker with auto-reconnect enabled."""
         try:
@@ -142,7 +174,11 @@ class MqttBatteryClient:
         self.connected = False
         with self._data_lock:
             self._boot_ready = False
-            if self.telemetry_source == "atomic" and self._has_full_snapshot:
+            if self.topology is not None:
+                self._invalidate_samples(
+                    "MQTT disconnected; topology requires a complete live frame"
+                )
+            elif self.telemetry_source == "atomic" and self._has_full_snapshot:
                 self.telemetry_partial = True
                 self.telemetry_error = "MQTT disconnected; using unexpired physical evidence"
             else:
@@ -165,9 +201,7 @@ class MqttBatteryClient:
         self._has_full_snapshot = False
         self._boot_ready = False
         self.telemetry_partial = False
-        self.batteries = {
-            i: BatteryData(i, self.cells_per_bms) for i in range(1, self.battery_count + 1)
-        }
+        self.batteries = self._empty_batteries()
         self._total_updated.clear()
         self.telemetry_error = reason
 
@@ -183,6 +217,11 @@ class MqttBatteryClient:
                 return
             if self.telemetry_source == "atomic":
                 if topic == f"{self.topic_prefix}/status" and payload.lower() == "offline":
+                    if self.topology is not None:
+                        self._invalidate_samples(
+                            "Producer offline; topology requires a complete live frame"
+                        )
+                        return
                     # Availability is transport evidence, never a BMS permission.
                     # Preserve the original physical deadlines during a reboot.
                     self._boot_ready = False
@@ -264,7 +303,12 @@ class MqttBatteryClient:
     def _process_telemetry(self, payload: str) -> None:
         """Accept one ordered, complete producer frame under the aggregate lock."""
         try:
-            frame, boot_id, sequence = decode_header(payload)
+            if self.topology is not None:
+                from . import telemetry_v2
+
+                frame, boot_id, sequence = telemetry_v2.decode_header(payload, self.topology)
+            else:
+                frame, boot_id, sequence = decode_header(payload)
             if boot_id in self._retired_boot_ids or (
                 boot_id == self._boot_id and sequence <= self._sequence
             ):
@@ -275,6 +319,9 @@ class MqttBatteryClient:
                     # Retain only the already accepted evidence and its expiry;
                     # the current session can still send newer frames.
                     reason = "Producer-session history full; restart driver to admit a new boot"
+                    if self.topology:
+                        self._invalidate_samples(reason)
+                        return
                     if self.telemetry_error != reason:
                         logger.warning("%s", reason)
                     self.telemetry_error = reason
@@ -284,12 +331,20 @@ class MqttBatteryClient:
                 self._boot_ready = False
             self._boot_id, self._sequence = boot_id, sequence
             if frame["ready"]:
-                batteries = decode_batteries(
-                    frame, self.battery_count, self.bms_first, self.cells_per_bms, monotonic()
-                )
+                if self.topology is not None:
+                    batteries = telemetry_v2.decode_batteries(frame, self.topology, monotonic())
+                else:
+                    batteries = decode_batteries(
+                        frame, self.battery_count, self.bms_first, self.cells_per_bms, monotonic()
+                    )
                 self._has_full_snapshot = True
                 self._boot_ready = True
                 self.telemetry_partial = False
+            elif self.topology is not None:
+                self._invalidate_samples(
+                    "Incomplete topology frame; every configured member is required"
+                )
+                return
             elif self._has_full_snapshot:
                 batteries = merge_partial(
                     frame, self.batteries, self.bms_first, monotonic(), refresh=self._boot_ready
@@ -311,7 +366,7 @@ class MqttBatteryClient:
         """Describe absent or expired physical readings under the snapshot lock."""
         with self._data_lock:
             missing = [
-                f"BMS {index + self.bms_first - 1}: {', '.join(battery.missing_fields())}"
+                f"BMS {self.topology.members[index - 1].bms_id if self.topology else index + self.bms_first - 1}: {', '.join(battery.missing_fields())}"
                 for index, battery in self.batteries.items()
                 if not battery.is_valid()
             ]
@@ -326,6 +381,10 @@ class MqttBatteryClient:
         """Append physical cell readings using the configured chain offset."""
         for cell_idx, voltage in batt["cells"].items():
             if voltage and voltage > 0:
+                if self.topology:
+                    global_id = self.topology.cell_offsets[batt["battery_id"] - 1] + cell_idx
+                    all_cells_with_id.append((global_id, voltage))
+                    continue
                 # Offset global IDs when this chain starts at bms N > 1
                 chain_cell_base = (self.bms_first - 1) * cells_per_bms
                 global_id = chain_cell_base + (batt["battery_id"] - 1) * cells_per_bms + cell_idx
@@ -354,6 +413,8 @@ class MqttBatteryClient:
 
         for batt in valid_batts:
             self._append_cell_voltages(batt, cells_per_bms, all_cells_with_id)
+            if self.topology:
+                temps_per_bms = self.topology.members[batt["battery_id"] - 1].temperatures
             for temp_idx, temp in batt["temperatures"].items():
                 if temp > -40:
                     all_temp_values.append(temp)
@@ -378,7 +439,11 @@ class MqttBatteryClient:
 
         seen_ids: set[int] = set()
         for battery_id, temp_idx, temp in pending_temps:
-            global_id = (battery_id - 1) * temps_per_bms + temp_idx
+            global_id = (
+                self.topology.temp_offsets[battery_id - 1] + temp_idx
+                if self.topology
+                else (battery_id - 1) * temps_per_bms + temp_idx
+            )
             if global_id in seen_ids:
                 logger.error(
                     "duplicate temperature global_id %s under temps_per_bms=%s; "
@@ -417,13 +482,33 @@ class MqttBatteryClient:
         valid_batts: list[dict[str, Any]],
         total_capacity_remaining: float,
         totals: dict[str, float] | None = None,
-    ) -> tuple[float, float, float, float, float]:
+    ) -> tuple[float, float, float, float, float | None]:
         """Compute aggregate voltage/current/power/soc/capacity.
 
         Uses ESP32 totals when fresh; otherwise derives values from per-BMS data.
         Important: many ESPHome configs publish voltage_total but NOT current_total.
         In that case total_current stays 0 and D-Bus showed 0A — use per-BMS current instead.
         """
+        if self.topology is not None:
+            voltage = sum(b["voltage"] for b in valid_batts)
+            power = sum(b["voltage"] * b["current"] for b in valid_batts)
+            current = power / voltage
+            soc = min(b["soc"] for b in valid_batts)
+            temperature = sum(b["temperature"] for b in valid_batts) / len(valid_batts)
+            # Optional Ah evidence must be fresh on every physical member.
+            remaining = [b["capacity_remaining"] for b in valid_batts]
+            capacity = min(remaining) if all(value is not None for value in remaining) else None
+            if (
+                capacity is not None
+                and self.installed_capacity > 0
+                and capacity > self.installed_capacity
+            ):
+                capacity = None
+            if not all(
+                math.isfinite(value) for value in (voltage, current, power, soc, temperature)
+            ):
+                raise ValueError("non-finite topology aggregate")
+            return voltage, current, power, soc, capacity
         if totals is None:
             totals = self._fresh_totals()
 
@@ -503,6 +588,8 @@ class MqttBatteryClient:
                         "current": b.current,
                         "power": b.power if b.power is not None else b.voltage * b.current,
                         "soc": b.soc,
+                        # Topology snapshots are rebuilt on every complete frame;
+                        # absent optional Ah never carries over from an older frame.
                         "capacity_remaining": b.capacity_remaining,
                         "temperature": b.temperature,
                         "temperatures": dict(b.temperatures),
@@ -523,6 +610,8 @@ class MqttBatteryClient:
         with self._data_lock:
             batt_snapshots, oldest_samples = self._battery_snapshots_locked()
             if not batt_snapshots:
+                return None
+            if self.topology and len(batt_snapshots) != self.battery_count:
                 return None
             # Copy totals and physical timestamps under the same lock as cells
             # and permissions. A new producer frame cannot tear this snapshot.
@@ -574,9 +663,16 @@ class MqttBatteryClient:
         total_capacity_remaining = total_capacity_full * avg_soc / 100
 
         # Use ESP32 totals if available, otherwise calculate from per-BMS data
-        voltage, current, power, soc, capacity = self._compute_electrical_totals(
-            valid_batts, total_capacity_remaining, totals
-        )
+        try:
+            voltage, current, power, soc, capacity = self._compute_electrical_totals(
+                valid_batts, total_capacity_remaining, totals
+            )
+        except (ValueError, OverflowError, ZeroDivisionError):
+            if not self.topology:
+                raise
+            with self._data_lock:
+                self._invalidate_samples("Invalid computed topology aggregate")
+            return None
 
         return {
             "data_complete": data_complete,

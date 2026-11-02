@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.8.0] - Unreleased
+
+### Added
+
+- Add opt-in explicit series inventories and strict schema-2 telemetry validation, with stable per-member cell/temperature mappings and offline observation.
+- Support commissioned homogeneous LiFePO4 strings with explicit protection profiles, member current ratings and an equipment-voltage ceiling; retain mixed inventories as observation-only.
+- Add topology installation preflight, identity collision checks, supervised-state preservation, explicit retirement and [configuration/rollback documentation](docs/flexible-topology.md).
+
+### Upgrade
+
+Existing configurations keep their original decoder, aggregation and control path;
+no topology migration is automatic. New topology mode requires a separate explicit
+manifest and commissioning. Preserve an accepted package and exact configuration
+for rollback; schema-2 producers also need a compatible producer/configuration
+rollback. The paho-mqtt runtime dependency remains unchanged.
+
+### Security
+
+Topology is declared by a local administrator, never inferred from MQTT. Incoming
+frames cannot change membership, cell inventory or protection profiles. Missing
+required telemetry blocks control for the complete string. Keep broker access
+restricted to trusted producers.
+
 ## [2.7.13] - Unreleased
 
 ### Changed

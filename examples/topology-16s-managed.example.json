@@ -1,0 +1,69 @@
+{
+  "config_version": 1,
+  "reserved_device_instances": [
+    512,
+    513,
+    514
+  ],
+  "chains": [
+    {
+      "id": "house16",
+      "connection": "series",
+      "source": {
+        "topic_prefix": "house-16s",
+        "telemetry_schema": 2
+      },
+      "members": [
+        {
+          "bms_id": 1,
+          "cells": 16,
+          "temperatures": 1,
+          "capacity_ah": 100.0,
+          "max_charge_current": 30.0,
+          "max_discharge_current": 40.0
+        }
+      ],
+      "service_suffix": "mqtt_house16",
+      "device_instance": 550,
+      "product_name": "House 16-cell battery",
+      "aggregation": {
+        "current": "voltage_weighted_bms_estimate",
+        "soc": "minimum_member",
+        "remaining_capacity": "minimum_remaining_ah"
+      },
+      "output": "managed",
+      "protection_profile": {
+        "chemistry": "lifepo4",
+        "max_charge_current": 30.0,
+        "max_discharge_current": 40.0,
+        "min_charge_current": 2.0,
+        "cell_max_voltage": 3.65,
+        "cell_full_current": 3.4,
+        "cell_start_limit": 3.45,
+        "cell_balance_voltage": 3.5,
+        "cell_near_full": 3.55,
+        "cell_cutoff": 3.6,
+        "charge_balance_factor": 0.2,
+        "imbalance_start_limit": 0.05,
+        "imbalance_aggressive": 0.1,
+        "imbalance_critical": 0.2,
+        "imbalance_aggressive_factor": 0.3,
+        "temp_full_current_min": 10,
+        "temp_full_current_max": 40,
+        "temp_stop_charge": 0,
+        "temp_stop_charge_high": 50,
+        "cold_charge_factor": 0.5,
+        "hot_charge_min_factor": 0.2,
+        "soc_reduce_start": 95,
+        "soc_reduce_factor": 0.5,
+        "discharge_cell_full_current": 3.0,
+        "discharge_cell_start_limit": 2.9,
+        "discharge_cell_cutoff": 2.7,
+        "discharge_low_factor": 0.5,
+        "discharge_hot_factor": 0.5,
+        "ccl_change_rate": 10.0
+      },
+      "system_voltage_limit": 60.0
+    }
+  ]
+}
