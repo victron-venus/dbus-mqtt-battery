@@ -2,7 +2,9 @@
 
 import importlib.util
 import os
-import subprocess
+
+# Only constructs completed-process and timeout fixtures; execution is mocked.
+import subprocess  # nosec B404
 import unittest
 from copy import deepcopy
 from pathlib import Path
