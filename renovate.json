@@ -16,7 +16,10 @@
     "**/fixtures/**",
     "**/tools/browser-compatibility/**",
     "security/provider/**",
-    "build-support/tls-armv7/**"
+    "build-support/tls-armv7/**",
+    ".github/requirements-bandit-1.9.2.txt",
+    ".github/requirements-bandit.txt",
+    ".github/requirements-fuzz.txt"
   ],
   "packageRules": [
     {
