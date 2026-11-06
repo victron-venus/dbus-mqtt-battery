@@ -80,7 +80,9 @@
   },
   "change_scope": {
     "documentation_paths": [],
-    "required_paths": [],
+    "required_paths": [
+      "CHANGELOG.md"
+    ],
     "always_validate_workflows": [
       "release-security.yml",
       "codeql.yml"
