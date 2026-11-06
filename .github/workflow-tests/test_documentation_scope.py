@@ -15,7 +15,9 @@ SPEC.loader.exec_module(SCOPE)
 
 def workflow(name):
     """Load a committed workflow without YAML boolean coercion."""
-    return yaml.load((ROOT / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader)
+    return yaml.load(  # nosec B506 - BaseLoader only constructs strings, lists and maps.
+        (ROOT / ".github/workflows" / name).read_text(), Loader=yaml.BaseLoader
+    )
 
 
 def classifier(document):
