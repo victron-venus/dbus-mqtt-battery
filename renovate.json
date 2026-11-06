@@ -8,6 +8,7 @@
     "custom.regex",
     "github-actions",
     "pep621",
+    "pip-compile",
     "pip_requirements"
   ],
   "ignorePaths": [
@@ -16,10 +17,7 @@
     "**/fixtures/**",
     "**/tools/browser-compatibility/**",
     "security/provider/**",
-    "build-support/tls-armv7/**",
-    ".github/requirements-bandit-1.9.2.txt",
-    ".github/requirements-bandit.txt",
-    ".github/requirements-fuzz.txt"
+    "build-support/tls-armv7/**"
   ],
   "packageRules": [
     {
@@ -34,21 +32,40 @@
       ]
     },
     {
-      "description": "Generated lock outputs are refreshed with their existing source workflow; their uv command headers are not supported by the pinned pip-compile manager.",
+      "description": "Preserve the explicitly named legacy Bandit 1.9.2 toolchain while allowing its transitive lock maintenance.",
       "matchManagers": [
-        "pip_requirements"
+        "pip-compile"
       ],
       "matchFileNames": [
-        ".github/requirements-bandit-1.9.2.txt",
-        ".github/requirements-bandit.txt",
-        ".github/requirements-fuzz.txt"
+        ".github/requirements-bandit-1.9.2.in"
       ],
-      "enabled": false
+      "matchPackageNames": [
+        "bandit"
+      ],
+      "allowedVersions": "==1.9.2"
     }
   ],
   "pip_requirements": {
     "managerFilePatterns": [
       "/(^|/)requirements[^/]*\\.(txt|pip)$/"
+    ],
+    "ignorePaths": [
+      "**/vendor/**",
+      "**/node_modules/**",
+      "**/fixtures/**",
+      "**/tools/browser-compatibility/**",
+      "security/provider/**",
+      "build-support/tls-armv7/**",
+      ".github/requirements-bandit-1.9.2.txt",
+      ".github/requirements-bandit.txt",
+      ".github/requirements-fuzz.txt"
+    ]
+  },
+  "pip-compile": {
+    "managerFilePatterns": [
+      "/^\\.github/requirements\\-bandit\\-1\\.9\\.2\\.txt$/",
+      "/^\\.github/requirements\\-bandit\\.txt$/",
+      "/^\\.github/requirements\\-fuzz\\.txt$/"
     ]
   }
 }
