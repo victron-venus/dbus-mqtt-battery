@@ -186,7 +186,7 @@ when installing a specific published version.
 - [inverter-dashboard-go](https://github.com/victron-venus/inverter-dashboard-go) — web dashboard for Cerbo telemetry.
 - [venus-os-observability](https://github.com/victron-venus/venus-os-observability) — optional D-Bus metrics and diagnostics.
 
-Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
+Browse the [public project catalog](https://victron-venus.github.io/#projects)
 for other Venus OS packages and companion tools. Each project documents its own
 installation, compatibility and release requirements.
 
