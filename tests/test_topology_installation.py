@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import subprocess  # nosec B404 - fixture launchers only, argv stays structured
 from dataclasses import asdict
 from pathlib import Path
@@ -82,6 +83,69 @@ def test_preflight_is_read_only_and_apply_preserves_supervisors(tmp_path):
     assert (kwargs["service_root"] / service.name).resolve() == service
     assert "--topology" in (service / "run").read_text()
     assert "multilog t s25000 n4" in (service / "log/run").read_text()
+
+
+def test_launcher_uses_commissioned_bytes_until_successful_reapply(tmp_path, monkeypatch):
+    from dbus_mqtt_battery import topology_install
+
+    manifest, kwargs = fixture_paths(tmp_path)
+    first_plan = build_plan(manifest, **kwargs)
+    apply_plan(first_plan)
+    service = first_plan.services[0]
+    runner = service.snapshot.parent / "run"
+    installed = runner.read_text()
+    argv = shlex.split(installed.splitlines()[-1])
+    assert Path(argv[argv.index("--topology") + 1]) == service.snapshot
+    assert service.snapshot.read_bytes() == first_plan.manifest_bytes
+
+    # A valid edit changes the draft identity, but a supervisor restart still
+    # receives the commissioned snapshot, including after a rejected reapply.
+    manifest.write_text(json.dumps({"config_version": 1, "chains": [chain(instance=551)]}))
+    kwargs["live_identities"] = {"other_battery": 551}
+    with pytest.raises(ValueError, match="live battery"):
+        build_plan(manifest, **kwargs)
+    assert runner.read_text() == installed
+    assert load_manifest(service.snapshot)[0].device_instance == 550
+
+    kwargs["live_identities"] = {}
+    successor = build_plan(manifest, **kwargs)
+    pending = successor.services[0].snapshot
+    original = topology_install._atomic_write
+    failed = False
+
+    def fail_registry(path, content, mode):
+        nonlocal failed
+        if path.name == "topology-services.json" and not failed:
+            failed = True
+            raise OSError("interrupted reapply")
+        original(path, content, mode)
+
+    monkeypatch.setattr(topology_install, "_atomic_write", fail_registry)
+    with pytest.raises(OSError, match="interrupted reapply"):
+        apply_plan(successor)
+    assert runner.read_text() == installed
+    assert not pending.exists()
+    assert load_manifest(service.snapshot)[0].device_instance == 550
+
+    apply_plan(successor)
+    assert str(pending) in runner.read_text()
+    assert pending.read_bytes() == manifest.read_bytes()
+    assert load_manifest(pending)[0].device_instance == 551
+    assert load_manifest(service.snapshot)[0].device_instance == 550
+
+
+def test_pre_snapshot_owned_launcher_is_adopted_on_reapply(tmp_path):
+    manifest, kwargs = fixture_paths(tmp_path)
+    plan = build_plan(manifest, **kwargs)
+    apply_plan(plan)
+    snapshot = plan.services[0].snapshot
+    runner = snapshot.parent / "run"
+    runner.write_text(plan.services[0].run.replace(str(snapshot), str(manifest)))
+    snapshot.unlink()
+    kwargs["live_identities"] = {"mqtt_test": 550}
+    apply_plan(build_plan(manifest, **kwargs))
+    assert runner.read_text() == plan.services[0].run
+    assert snapshot.read_bytes() == manifest.read_bytes()
 
 
 def test_existing_legacy_identity_conflict_leaves_launcher_unchanged(tmp_path):
@@ -188,7 +252,8 @@ def test_configuration_cannot_live_inside_release_overlay(tmp_path):
 
 def test_retirement_requires_owned_stopped_unlinked_service_and_preserves_state(tmp_path):
     manifest, kwargs = fixture_paths(tmp_path)
-    apply_plan(build_plan(manifest, **kwargs))
+    plan = build_plan(manifest, **kwargs)
+    apply_plan(plan)
     package = kwargs["package_root"]
     service_root = kwargs["service_root"]
     args = {"package_root": package, "service_root": service_root}
@@ -218,6 +283,7 @@ def test_retirement_requires_owned_stopped_unlinked_service_and_preserves_state(
     retired = retire_service("test", **args)
     assert retired.stat().st_ino == inode
     assert (retired / "run").is_file()
+    assert (retired / plan.services[0].snapshot.name).read_bytes() == manifest.read_bytes()
     assert not persistent.exists()
     require_no_owned_services(package)
 
@@ -227,17 +293,14 @@ def test_failed_write_restores_launchers_before_new_service_links_appear(tmp_pat
 
     manifest, kwargs = fixture_paths(tmp_path)
     plan = build_plan(manifest, **kwargs)
-    original = topology_install._atomic_text
-    calls = 0
+    original = topology_install._atomic_write
 
-    def fail_registry_once(path, content, mode):
-        nonlocal calls
-        calls += 1
-        if calls == 3:
+    def fail_registry(path, content, mode):
+        if path.name == "topology-services.json":
             raise OSError("simulated interrupted write")
         original(path, content, mode)
 
-    monkeypatch.setattr(topology_install, "_atomic_text", fail_registry_once)
+    monkeypatch.setattr(topology_install, "_atomic_write", fail_registry)
     with pytest.raises(OSError, match="simulated"):
         apply_plan(plan)
     assert not (kwargs["service_root"] / "dbus-mqtt-chain-test").exists()

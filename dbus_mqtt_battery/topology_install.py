@@ -12,6 +12,7 @@ import shlex
 import sys
 import tempfile
 import types
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,7 +24,7 @@ if not __package__:
     _package.__path__ = [str(_root / "dbus_mqtt_battery")]
     sys.modules["dbus_mqtt_battery"] = _package
 
-from dbus_mqtt_battery.topology import load_manifest
+from dbus_mqtt_battery.topology import decode_manifest, read_manifest_bytes
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class ServicePlan:
     output: str
     charge_voltage_limit: float | None
     system_voltage_limit: float | None
+    snapshot: Path
     run: str
     log_run: str
 
@@ -48,6 +50,7 @@ class InstallPlan:
 
     manifest: Path
     manifest_sha256: str
+    manifest_bytes: bytes
     package_root: Path
     service_root: Path
     log_root: Path
@@ -133,28 +136,33 @@ def live_battery_identities() -> dict[str, int]:
         ) from error
 
 
-def _check_paths(package_root: Path, service_root: Path, log_root: Path, names: set[str]) -> None:
+def _check_service_files(target: Path, log_dir: Path, snapshot: Path) -> None:
+    files = (target / "run", target / "log/run", target / ".topology-ready", snapshot)
+    directories = (target, target / "log", log_dir)
+    for path in (*directories, *files):
+        if path.is_symlink():
+            raise ValueError(f"refusing symlink in installation path: {path}")
+    for path in files:
+        if path.exists() and not path.is_file():
+            raise ValueError(f"launcher path is not a regular file: {path}")
+    for path in directories:
+        if path.exists() and not path.is_dir():
+            raise ValueError(f"service path is not a directory: {path}")
+
+
+def _check_paths(
+    package_root: Path,
+    service_root: Path,
+    log_root: Path,
+    services: Sequence[ServicePlan],
+) -> None:
     """Reject paths that could redirect writes or replace an unrelated service."""
     if package_root.is_symlink() or (package_root / "service").is_symlink():
         raise ValueError("package and persistent service roots must not be symlinks")
-    for name in names:
+    for service in services:
+        name = service.name
         target = package_root / "service" / name
-        for path in (
-            target,
-            target / "log",
-            target / "run",
-            target / "log/run",
-            target / ".topology-ready",
-            log_root / name,
-        ):
-            if path.is_symlink():
-                raise ValueError(f"refusing symlink in installation path: {path}")
-        for path in (target / "run", target / "log/run", target / ".topology-ready"):
-            if path.exists() and not path.is_file():
-                raise ValueError(f"launcher path is not a regular file: {path}")
-        for path in (target, target / "log", log_root / name):
-            if path.exists() and not path.is_dir():
-                raise ValueError(f"service path is not a directory: {path}")
+        _check_service_files(target, log_root / name, service.snapshot)
         link = service_root / name
         if link.is_symlink():
             if link.resolve() != target.resolve():
@@ -178,10 +186,9 @@ def build_plan(
     manifest = manifest.resolve()
     if manifest.is_relative_to(package_root.resolve()):
         raise ValueError("keep topology configuration outside the overlaid package directory")
-    digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
-    chains = load_manifest(manifest)
-    if hashlib.sha256(manifest.read_bytes()).hexdigest() != digest:
-        raise ValueError("topology changed during validation")
+    payload = read_manifest_bytes(manifest)
+    digest = hashlib.sha256(payload).hexdigest()
+    chains = decode_manifest(payload)
     owned = _registry(package_root)
     services = []
     broker_path = options_dir / "broker"
@@ -190,13 +197,14 @@ def build_plan(
         raise ValueError("broker must be one nonempty value")
     for chain in chains:
         name = f"dbus-mqtt-chain-{chain.id}"
+        snapshot = package_root / "service" / name / f"topology-{digest}.json"
         argv = [
             "python3",
             "dbus-mqtt-battery.py",
             "--broker",
             broker,
             "--topology",
-            str(manifest),
+            str(snapshot),
             "--chain",
             chain.id,
         ]
@@ -214,6 +222,7 @@ def build_plan(
                     else None
                 ),
                 chain.system_voltage_limit,
+                snapshot,
                 "#!/bin/sh\nexec 2>&1\ncd "
                 + shlex.quote(str(package_root))
                 + " || exit 1\nexec "
@@ -231,7 +240,7 @@ def build_plan(
             "explicitly retire removed topology services before applying: "
             + ", ".join(sorted(retired))
         )
-    _check_paths(package_root, service_root, log_root, names)
+    _check_paths(package_root, service_root, log_root, services)
     for runner in (package_root / "service").glob("*/run"):
         if runner.parent.name in owned:
             continue
@@ -258,6 +267,7 @@ def build_plan(
     return InstallPlan(
         manifest,
         digest,
+        payload,
         package_root,
         service_root,
         log_root,
@@ -266,12 +276,12 @@ def build_plan(
     )
 
 
-def _atomic_text(path: Path, text: str, mode: int) -> None:
+def _atomic_write(path: Path, content: bytes, mode: int) -> None:
     """Replace one owned regular file without truncating a launcher in place."""
     descriptor, temporary = tempfile.mkstemp(prefix=".topology-", dir=path.parent)
     try:
-        with os.fdopen(descriptor, "w") as stream:
-            stream.write(text)
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(content)
             stream.flush()
             os.fsync(stream.fileno())
         os.chmod(temporary, mode)
@@ -286,19 +296,26 @@ def apply_plan(plan: InstallPlan) -> None:
         raise ValueError("offline chains cannot be installed as supervised battery services")
     if not plan.live_checked:
         raise ValueError("apply requires a successful live D-Bus identity check")
-    if hashlib.sha256(plan.manifest.read_bytes()).hexdigest() != plan.manifest_sha256:
+    if read_manifest_bytes(plan.manifest) != plan.manifest_bytes:
         raise ValueError("topology changed after preflight; build a new plan")
     _check_paths(
         plan.package_root,
         plan.service_root,
         plan.log_root,
-        {service.name for service in plan.services},
+        plan.services,
     )
-    files: dict[Path, tuple[str, int]] = {}
+    files: dict[Path, tuple[bytes, int]] = {}
+    for service in plan.services:
+        # The launcher can safely switch generations in one atomic replacement.
+        # Never replace a snapshot already named by an installed launcher.
+        if service.snapshot.exists():
+            if read_manifest_bytes(service.snapshot) != plan.manifest_bytes:
+                raise ValueError(f"commissioned topology snapshot differs: {service.snapshot}")
+        else:
+            files[service.snapshot] = (plan.manifest_bytes, 0o600)
     for service in plan.services:
         target = plan.package_root / "service" / service.name
-        files[target / "run"] = (service.run, 0o755)
-        files[target / "log/run"] = (service.log_run, 0o755)
+        files[target / "log/run"] = (service.log_run.encode(), 0o755)
     registry = {
         "config_version": 1,
         "manifest": str(plan.manifest),
@@ -313,16 +330,21 @@ def apply_plan(plan: InstallPlan) -> None:
         },
     }
     files[plan.package_root / "topology-services.json"] = (
-        json.dumps(registry, indent=2) + "\n",
+        (json.dumps(registry, indent=2) + "\n").encode(),
         0o600,
     )
     for service in plan.services:
         files[plan.package_root / "service" / service.name / ".topology-ready"] = (
-            plan.manifest_sha256 + "\n",
+            (plan.manifest_sha256 + "\n").encode(),
             0o600,
         )
+    for service in plan.services:
+        # Publish new launcher references only once the snapshot and all
+        # ancillary files are ready, even if a supervisor restarts meanwhile.
+        target = plan.package_root / "service" / service.name
+        files[target / "run"] = (service.run.encode(), 0o755)
     previous = {
-        path: (path.read_text(), path.stat().st_mode & 0o777) if path.exists() else None
+        path: (path.read_bytes(), path.stat().st_mode & 0o777) if path.exists() else None
         for path in files
     }
     written: list[Path] = []
@@ -342,12 +364,12 @@ def apply_plan(plan: InstallPlan) -> None:
         ensure_directory(plan.service_root)
         for service in plan.services:
             ensure_directory(plan.log_root / service.name)
-        # Every launcher is complete before readiness markers and links appear.
-        # Existing supervisors and processes are never restarted or replaced.
+        # Every launcher is complete before /service links appear. Existing
+        # supervisors and processes are never restarted or replaced here.
         for path, (content, mode) in files.items():
             ensure_directory(path.parent)
             written.append(path)
-            _atomic_text(path, content, mode)
+            _atomic_write(path, content, mode)
         for service in plan.services:
             link = plan.service_root / service.name
             if not link.is_symlink():
@@ -366,7 +388,7 @@ def apply_plan(plan: InstallPlan) -> None:
             if old is None:
                 path.unlink(missing_ok=True)
             else:
-                _atomic_text(path, old[0], old[1])
+                _atomic_write(path, old[0], old[1])
         for directory in reversed(directories):
             directory.rmdir()
         raise
@@ -425,9 +447,9 @@ def retire_service(
     target.rename(destination)
     del owned[name]
     try:
-        _atomic_text(
+        _atomic_write(
             package_root / "topology-services.json",
-            json.dumps({"config_version": 1, "services": owned}, indent=2) + "\n",
+            (json.dumps({"config_version": 1, "services": owned}, indent=2) + "\n").encode(),
             0o600,
         )
     except OSError:

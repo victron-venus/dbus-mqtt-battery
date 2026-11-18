@@ -92,6 +92,27 @@ def test_missing_optional_capacity_remains_unknown_without_disconnecting(battery
     assert service._dbusservice["/TimeToGo"] is None
 
 
+def test_managed_charge_recovery_accumulates_sub_decitenth_steps(battery_service):
+    now, _, legacy_service = battery_service
+    manifest = topology_manifest((16,), managed=True)
+    manifest["chains"][0]["protection_profile"]["ccl_change_rate"] = 0.02
+    topology = parse_topology(manifest)
+    client = MqttBatteryClient("unused.invalid", 1883, topology=topology)
+    service = type(legacy_service)(client)
+    blocked = topology_frame(topology)
+    blocked["batteries"][0]["charging"] = False
+    deliver(client, blocked)
+    service.update()
+    assert service._dbusservice["/Info/MaxChargeCurrent"] == 0
+
+    for index, expected in enumerate((0, 0, 0.1, 0.1, 0.2), 1):
+        now[0] += 2
+        deliver(client, topology_frame(topology, seq=index + 1))
+        service.update()
+        assert service._dbusservice["/Info/MaxChargeCurrent"] == expected
+        assert service._dbusservice["/Io/AllowToCharge"] == int(expected > 0)
+
+
 def test_mixed_inventory_offline_math_and_no_service(battery_service):
     _, _, legacy_service = battery_service
     topology = parse_topology(topology_manifest((4, 8, 4)))

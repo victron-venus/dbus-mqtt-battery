@@ -29,7 +29,7 @@ of every BMS, radio environment or series connection.
 
 ## Manifest
 
-Use a versioned JSON file outside the installed source package, for example
+Use a regular versioned JSON file outside the installed source package, for example
 `/data/setupOptions/dbus-mqtt-battery/topology.json`. Examples:
 
 - [Single 16-cell battery, offline](../examples/topology-16s-offline.json)
@@ -146,6 +146,9 @@ or invalid explicitly selected manifest is an error, not a fallback to old defau
 Offline entries are accepted by preflight but cannot be installed as battery services.
 
 The installer validates every chain before writing anything and uses quoted argv.
+It records the validated manifest in a content-addressed snapshot in each service's
+persistent directory. The launcher uses that snapshot on every start. Editing the
+source JSON prepares a draft for the next apply and leaves the applied settings intact.
 Services are named `dbus-mqtt-chain-<id>`. It preserves supervisor directories and
 does not restart existing processes. New service links are activated only after
 complete launchers and ownership metadata are written. A `.topology-ready` marker
@@ -156,8 +159,10 @@ new service link appears, completed runtime state is preserved because svscan ma
 already have started that service; inspect the plan and repeat preflight/apply.
 Do not remove runtime directories underneath a running service.
 
-For an existing configured service, changing a manifest does not hot-reload its
-inventory. Restart that selected service during its commissioning window, then
+On upgrade from 2.8.0, run preflight and apply the currently commissioned manifest
+once to move existing topology launchers to their snapshots. To commission an
+edited manifest, rerun live preflight and `setup install` to apply the new snapshot.
+Restart the selected service during its commissioning window, then
 verify its identity, complete cell count, fresh measurements, permissions, voltage
 limit, current limits and recovery after a deliberately isolated test interruption.
 
@@ -179,8 +184,9 @@ python3 /data/dbus-mqtt-battery/dbus_mqtt_battery/topology_install.py --retire h
 ```
 
 Retirement accepts only recorded topology-owned services. It checks stopped child
-and supervisor state, preserves the directory under `retired-topology/`, and removes
-its ownership entry. The retained state is rollback material; remove it only after
+and supervisor state, preserves the directory and its applied snapshots under
+`retired-topology/`, and removes its ownership entry. The retained state is rollback
+material; remove it only after
 confirming it has no remaining recovery or process dependency. Package uninstall
 refuses while topology-owned services remain. Legacy uninstall behavior is unchanged
 when there is no topology ownership registry.

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import stat
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -281,13 +283,28 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def load_manifest(path: str | Path) -> tuple[ChainTopology, ...]:
-    """Load a bounded JSON file; missing/malformed explicit configuration is fatal."""
-    with Path(path).open("rb") as handle:
+def read_manifest_bytes(path: str | Path) -> bytes:
+    """Read at most one bounded manifest from disk."""
+    # A path check followed by an ordinary open can block if the file is
+    # replaced with a FIFO. Check the opened descriptor before reading.
+    descriptor = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(handle.fileno()).st_mode):
+            raise ValueError("topology manifest must be a regular file")
         payload = handle.read(MAX_MANIFEST_BYTES + 1)
     if len(payload) > MAX_MANIFEST_BYTES:
         raise ValueError("topology manifest is too large")
+    return payload
+
+
+def decode_manifest(payload: bytes) -> tuple[ChainTopology, ...]:
+    """Parse the exact bytes read by the runtime or installer."""
     return parse_manifest(json.loads(payload, object_pairs_hook=_unique_object))
+
+
+def load_manifest(path: str | Path) -> tuple[ChainTopology, ...]:
+    """Load a bounded JSON file; missing/malformed explicit configuration is fatal."""
+    return decode_manifest(read_manifest_bytes(path))
 
 
 def parse_topology(document: Any, chain_id: str | None = None) -> ChainTopology:

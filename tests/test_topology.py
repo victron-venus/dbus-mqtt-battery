@@ -3,6 +3,7 @@
 # pylint: disable=missing-function-docstring,redefined-outer-name
 
 import json
+import os
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
 
@@ -172,6 +173,19 @@ def test_file_loader_rejects_duplicates_missing_files_and_oversized_inputs(tmp_p
         load_manifest(path)
     path.write_text(json.dumps(topology_manifest()))
     assert load_topology(path).cell_offsets == (0, 4, 12)
+
+
+def test_manifest_reader_rejects_fifo_and_symlink_without_reading_them(tmp_path):
+    fifo = tmp_path / "fifo.json"
+    os.mkfifo(fifo)
+    with pytest.raises(ValueError, match="regular file"):
+        load_manifest(fifo)
+    regular = tmp_path / "topology.json"
+    regular.write_text(json.dumps(topology_manifest()))
+    symlink = tmp_path / "symlink.json"
+    symlink.symlink_to(regular)
+    with pytest.raises(OSError):
+        load_manifest(symlink)
 
 
 def test_offline_capacity_remains_unknown_without_complete_ratings():

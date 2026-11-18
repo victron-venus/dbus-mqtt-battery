@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.8.1] - Unreleased
+
+### Fixed
+
+- Keep supervised topology launchers on their applied manifest after edits to the draft. Applying a revised manifest switches the launcher to the newly validated snapshot.
+- Allow configured charge recovery steps below 0.1 A per poll to accumulate while continuing to round the published limit down.
+
+### Upgrade
+
+Existing explicit topology services should reapply their commissioned manifest once
+to adopt snapshot-based launchers. Complete live preflight before applying a change.
+Installations using scalar setup options continue to use their existing launchers.
+
+### Security
+
+The installer stores commissioned snapshots with owner-only access. Service
+restarts load the applied snapshot, so edits to a draft require a new apply to
+take effect.
+
 ## [2.8.0] - Unreleased
 
 ### Added
