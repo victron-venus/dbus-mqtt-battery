@@ -570,9 +570,11 @@ class DbusAggregateService:
             for path, previous in zip(limit_paths, self._previous_limits):
                 self._dbusservice[path] = min(self._dbusservice[path], previous)
         self._previous_limits = tuple(self._dbusservice[path] for path in limit_paths)
-        # Future soft ramps must start at the limits actually published after
-        # the partial-frame hold, rather than at an internally relaxed value.
-        self.dvcc.last_ccl, self.dvcc.last_dcl = self._previous_limits
+        if self._control_profile is None or data["telemetry_partial"]:
+            # Keep the legacy partial-frame hold and published-limit feedback.
+            self.dvcc.last_ccl, self.dvcc.last_dcl = self._previous_limits
+        # Complete explicit frames keep the controller's unrounded state so
+        # recovery increments smaller than 0.1 A accumulate over several polls.
         for path, limit in zip(
             (DBUS_ALLOW_CHARGE_PATH, DBUS_ALLOW_DISCHARGE_PATH), self._previous_limits
         ):
