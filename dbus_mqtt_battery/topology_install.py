@@ -136,6 +136,20 @@ def live_battery_identities() -> dict[str, int]:
         ) from error
 
 
+def _check_service_files(target: Path, log_dir: Path, snapshot: Path) -> None:
+    files = (target / "run", target / "log/run", target / ".topology-ready", snapshot)
+    directories = (target, target / "log", log_dir)
+    for path in (*directories, *files):
+        if path.is_symlink():
+            raise ValueError(f"refusing symlink in installation path: {path}")
+    for path in files:
+        if path.exists() and not path.is_file():
+            raise ValueError(f"launcher path is not a regular file: {path}")
+    for path in directories:
+        if path.exists() and not path.is_dir():
+            raise ValueError(f"service path is not a directory: {path}")
+
+
 def _check_paths(
     package_root: Path,
     service_root: Path,
@@ -148,28 +162,7 @@ def _check_paths(
     for service in services:
         name = service.name
         target = package_root / "service" / name
-        for path in (
-            target,
-            target / "log",
-            target / "run",
-            target / "log/run",
-            target / ".topology-ready",
-            service.snapshot,
-            log_root / name,
-        ):
-            if path.is_symlink():
-                raise ValueError(f"refusing symlink in installation path: {path}")
-        for path in (
-            target / "run",
-            target / "log/run",
-            target / ".topology-ready",
-            service.snapshot,
-        ):
-            if path.exists() and not path.is_file():
-                raise ValueError(f"launcher path is not a regular file: {path}")
-        for path in (target, target / "log", log_root / name):
-            if path.exists() and not path.is_dir():
-                raise ValueError(f"service path is not a directory: {path}")
+        _check_service_files(target, log_root / name, service.snapshot)
         link = service_root / name
         if link.is_symlink():
             if link.resolve() != target.resolve():
