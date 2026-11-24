@@ -1,7 +1,24 @@
 # Changelog
 
-## [2.8.1] - Unreleased
+## [2.8.2] - Unreleased
 
+### Changed
+
+- Refresh pinned dependencies and reusable workflows since 2.8.1; no functional change is recorded for this base.
+
+### Upgrade
+
+Existing explicit topology services should reapply their commissioned manifest once
+to adopt snapshot-based launchers. Complete live preflight before applying a change.
+Installations using scalar setup options continue to use their existing launchers.
+
+### Security
+
+The installer stores commissioned snapshots with owner-only access. Service
+restarts load the applied snapshot, so edits to a draft require a new apply to
+take effect.
+
+## [2.8.1] - 2026-11-17
 ### Fixed
 
 - Keep supervised topology launchers on their applied manifest after edits to the draft. Applying a revised manifest switches the launcher to the newly validated snapshot.
